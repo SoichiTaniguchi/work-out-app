@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "筋トレ記録",
+    "slug": "work-out-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.soichi.workoutapp",
+      "infoPlist": {
+        "NSSupportsLiveActivities": true
+      }
+    },
+    "android": {
+      "package": "com.soichi.workoutapp"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
+  }
+}
