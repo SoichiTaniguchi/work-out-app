@@ -13,14 +13,18 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.soichi.workoutapp",
       "infoPlist": {
-        "NSSupportsLiveActivities": true
+        "NSSupportsLiveActivities": true,
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.soichi.workoutapp"
     },
-    "plugins": [
-      "expo-sqlite"
-    ]
+    "extra": {
+      "eas": {
+        "projectId": "4fbcf2c0-4451-4880-b965-df90130f6020"
+      }
+    },
+    "owner": "soichi-taniguchis-team"
   }
 }
