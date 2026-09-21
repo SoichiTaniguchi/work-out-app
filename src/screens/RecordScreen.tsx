@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, TextInput, StyleSheet, Alert } from "react-native";
+import { View, Text, Pressable, TextInput, StyleSheet, Alert, AppState } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -67,6 +67,7 @@ export default function RecordScreen({ navigation, route }: Props) {
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
 
   const restIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const restEndAtRef = useRef<number | null>(null);
   const notificationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -87,6 +88,7 @@ export default function RecordScreen({ navigation, route }: Props) {
       clearInterval(restIntervalRef.current);
       restIntervalRef.current = null;
     }
+    restEndAtRef.current = null;
     setRestSeconds(null);
     cancelRestEndNotification(notificationIdRef.current);
     notificationIdRef.current = null;
@@ -95,28 +97,44 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   useEffect(() => clearRestTimer, [clearRestTimer]);
 
+  // 残り時間は「終了予定時刻 - 現在時刻」から毎回計算する。バックグラウンド中は
+  // setIntervalがOSに一時停止されるため、単純にカウントダウンする実装だと復帰後に
+  // 表示がずれる(止まっていた分だけ多く残っているように見える)。
+  const tickRestTimer = useCallback(() => {
+    const endAt = restEndAtRef.current;
+    if (endAt === null) return;
+
+    const remaining = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+    setRestSeconds(remaining);
+
+    if (remaining <= 0) {
+      if (restIntervalRef.current) {
+        clearInterval(restIntervalRef.current);
+        restIntervalRef.current = null;
+      }
+      restEndAtRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") tickRestTimer();
+    });
+    return () => subscription.remove();
+  }, [tickRestTimer]);
+
   const startRestTimer = useCallback(() => {
     clearRestTimer();
+    restEndAtRef.current = Date.now() + REST_DURATION_SECONDS * 1000;
     setRestSeconds(REST_DURATION_SECONDS);
-    restIntervalRef.current = setInterval(() => {
-      setRestSeconds((prev) => {
-        if (prev === null || prev <= 1) {
-          if (restIntervalRef.current) {
-            clearInterval(restIntervalRef.current);
-            restIntervalRef.current = null;
-          }
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    restIntervalRef.current = setInterval(tickRestTimer, 1000);
 
     const exerciseName = exercise?.name ?? "";
     scheduleRestEndNotification(exerciseName, REST_DURATION_SECONDS).then((id) => {
       notificationIdRef.current = id;
     });
     startRestTimerActivity({ exerciseName, durationSeconds: REST_DURATION_SECONDS });
-  }, [clearRestTimer, exercise]);
+  }, [clearRestTimer, tickRestTimer, exercise]);
 
   const setFieldValue = (index: number, field: RecordFieldType, text: string) => {
     setSets((prev) =>
