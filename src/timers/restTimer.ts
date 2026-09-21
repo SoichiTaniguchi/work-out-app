@@ -33,18 +33,22 @@ export async function scheduleRestEndNotification(
     return null;
   }
 
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: "休憩終了",
-      body: `${exerciseName} の次のセットを始めましょう`,
-      sound: true,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: durationSeconds,
-      repeats: false,
-    },
-  });
+  try {
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "休憩終了",
+        body: `${exerciseName} の次のセットを始めましょう`,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(Date.now() + durationSeconds * 1000),
+      },
+    });
+  } catch (error) {
+    console.warn("[restTimer] 通知のスケジュールに失敗しました", error);
+    return null;
+  }
 }
 
 export async function cancelRestEndNotification(notificationId: string | null): Promise<void> {
