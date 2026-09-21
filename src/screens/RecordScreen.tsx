@@ -1,42 +1,207 @@
-import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, TextInput, StyleSheet, Alert } from "react-native";
+import { useSQLiteContext } from "expo-sqlite";
 import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import type { Exercise, PersonalRecordType, RecordFieldType, SetLog, WorkoutLog } from "@/types";
+import { getExercise } from "@/db/exercises";
+import { getLastWorkoutLog, createWorkoutLog } from "@/db/logs";
+import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
+import { scheduleRestEndNotification, cancelRestEndNotification } from "@/timers/restTimer";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Record">;
 
-interface SetRow {
-  weight: string;
-  reps: string;
+const REST_DURATION_SECONDS = 90;
+const DEFAULT_SET_COUNT = 3;
+
+const FIELD_CONFIG: Record<
+  RecordFieldType,
+  { label: string; key: keyof SetLog; step?: number }
+> = {
+  weight: { label: "重量(kg)", key: "weight", step: 2.5 },
+  reps: { label: "回数", key: "reps", step: 1 },
+  time: { label: "時間(秒)", key: "timeSec" },
+  distance: { label: "距離(km)", key: "distanceKm" },
+  rpe: { label: "RPE", key: "rpe" },
+};
+
+const PR_LABELS: Record<PersonalRecordType, string> = {
+  maxWeight: "最大重量",
+  maxReps: "最大回数",
+  maxVolume: "総ボリューム",
+};
+
+interface SetRowState {
+  values: Partial<Record<RecordFieldType, string>>;
   done: boolean;
 }
 
-export default function RecordScreen({ navigation }: Props) {
-  // TODO: exerciseId から前回記録・記録項目定義をDBから取得する
-  const [sets, setSets] = useState<SetRow[]>([
-    { weight: "60", reps: "10", done: true },
-    { weight: "60", reps: "9", done: true },
-    { weight: "60", reps: "", done: false },
-  ]);
+function formatSetSummary(set: SetLog, fields: RecordFieldType[]): string {
+  const parts: string[] = [];
+  if (fields.includes("weight") && fields.includes("reps") && set.weight !== undefined) {
+    parts.push(`${set.weight}kg×${set.reps ?? "-"}`);
+  } else {
+    if (fields.includes("weight") && set.weight !== undefined) parts.push(`${set.weight}kg`);
+    if (fields.includes("reps") && set.reps !== undefined) parts.push(`${set.reps}回`);
+  }
+  if (fields.includes("time") && set.timeSec !== undefined) parts.push(`${set.timeSec}秒`);
+  if (fields.includes("distance") && set.distanceKm !== undefined) parts.push(`${set.distanceKm}km`);
+  if (fields.includes("rpe") && set.rpe !== undefined) parts.push(`RPE${set.rpe}`);
+  return parts.join(" ") || "-";
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+export default function RecordScreen({ navigation, route }: Props) {
+  const { exerciseId } = route.params;
+  const db = useSQLiteContext();
+
+  const [exercise, setExercise] = useState<Exercise | null>(null);
+  const [lastLog, setLastLog] = useState<WorkoutLog | null>(null);
+  const [sets, setSets] = useState<SetRowState[]>([]);
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
 
-  const completeSet = (index: number) => {
-    setSets((prev) => prev.map((s, i) => (i === index ? { ...s, done: true } : s)));
-    // 休憩タイマー開始: アプリを閉じてもDynamic Island/ロック画面で継続表示させる
-    const seconds = 90;
-    setRestSeconds(seconds);
-    startRestTimerActivity({
-      exerciseName: "ベンチプレス",
-      durationSeconds: seconds,
+  const restIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const notificationIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const ex = await getExercise(db, exerciseId);
+      const last = await getLastWorkoutLog(db, exerciseId);
+      setExercise(ex);
+      setLastLog(last);
+      const initialCount = last ? last.sets.length : DEFAULT_SET_COUNT;
+      setSets(
+        Array.from({ length: initialCount }, () => ({ values: {}, done: false }))
+      );
+    })();
+  }, [db, exerciseId]);
+
+  const clearRestTimer = useCallback(() => {
+    if (restIntervalRef.current) {
+      clearInterval(restIntervalRef.current);
+      restIntervalRef.current = null;
+    }
+    setRestSeconds(null);
+    cancelRestEndNotification(notificationIdRef.current);
+    notificationIdRef.current = null;
+    endRestTimerActivity();
+  }, []);
+
+  useEffect(() => clearRestTimer, [clearRestTimer]);
+
+  const startRestTimer = useCallback(() => {
+    clearRestTimer();
+    setRestSeconds(REST_DURATION_SECONDS);
+    restIntervalRef.current = setInterval(() => {
+      setRestSeconds((prev) => {
+        if (prev === null || prev <= 1) {
+          if (restIntervalRef.current) {
+            clearInterval(restIntervalRef.current);
+            restIntervalRef.current = null;
+          }
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    const exerciseName = exercise?.name ?? "";
+    scheduleRestEndNotification(exerciseName, REST_DURATION_SECONDS).then((id) => {
+      notificationIdRef.current = id;
     });
+    startRestTimerActivity({ exerciseName, durationSeconds: REST_DURATION_SECONDS });
+  }, [clearRestTimer, exercise]);
+
+  const setFieldValue = (index: number, field: RecordFieldType, text: string) => {
+    setSets((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, values: { ...row.values, [field]: text } } : row))
+    );
   };
 
-  const finishExercise = () => {
-    endRestTimerActivity();
-    navigation.navigate("Home", { userId: "u1" });
+  const stepField = (index: number, field: RecordFieldType, delta: number) => {
+    const config = FIELD_CONFIG[field];
+    setSets((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        const previousValue = lastLog?.sets[index]?.[config.key];
+        const current = row.values[field];
+        const base = current && current.trim() !== "" ? Number(current) : previousValue ?? 0;
+        const next = Math.max(0, (Number.isNaN(base) ? 0 : base) + delta);
+        return { ...row, values: { ...row.values, [field]: String(next) } };
+      })
+    );
   };
+
+  const completeSet = (index: number) => {
+    if (sets[index]?.done) return;
+    setSets((prev) => prev.map((row, i) => (i === index ? { ...row, done: true } : row)));
+    startRestTimer();
+  };
+
+  const addSet = () => {
+    setSets((prev) => [...prev, { values: {}, done: false }]);
+  };
+
+  const handleFinish = async () => {
+    if (!exercise) return;
+
+    const resolvedSets: SetLog[] = sets
+      .map((row, originalIndex) => {
+        if (!row.done) return null;
+        const set: SetLog = {};
+        for (const field of exercise.fieldDefinition) {
+          const config = FIELD_CONFIG[field];
+          const raw = row.values[field];
+          const previousValue = lastLog?.sets[originalIndex]?.[config.key];
+          let value: number | undefined;
+          if (raw !== undefined && raw.trim() !== "") {
+            const parsed = Number(raw);
+            value = Number.isNaN(parsed) ? undefined : parsed;
+          } else {
+            value = previousValue;
+          }
+          if (value !== undefined) {
+            (set as Record<string, number>)[config.key] = value;
+          }
+        }
+        return set;
+      })
+      .filter((s): s is SetLog => s !== null);
+
+    clearRestTimer();
+
+    if (resolvedSets.length === 0) {
+      navigation.goBack();
+      return;
+    }
+
+    await createWorkoutLog(db, exerciseId, new Date().toISOString(), resolvedSets);
+    const newRecords = await evaluateAndSavePersonalRecords(db, exerciseId, resolvedSets);
+
+    if (newRecords.length > 0) {
+      const labels = newRecords.map((r) => PR_LABELS[r.type]).join("・");
+      Alert.alert("自己ベスト更新!", `${labels} を更新しました`, [
+        { text: "OK", onPress: () => navigation.goBack() },
+      ]);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  if (!exercise) {
+    return <View style={styles.container} />;
+  }
+
+  const fields = exercise.fieldDefinition;
+  const lastSummary = lastLog
+    ? `前回(${formatDate(lastLog.date)}): ${lastLog.sets.map((s) => formatSetSummary(s, fields)).join(", ")}`
+    : "前回の記録はありません";
 
   return (
     <View style={styles.container}>
@@ -44,44 +209,79 @@ export default function RecordScreen({ navigation }: Props) {
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
         </Pressable>
-        <Text style={styles.title}>ベンチプレス</Text>
+        <Text style={styles.title}>{exercise.name}</Text>
       </View>
 
-      <Text style={styles.lastRecord}>前回: 60kg × 10回 × 3set（9/18）</Text>
+      <Text style={styles.lastRecord}>{lastSummary}</Text>
 
       <View style={styles.sets}>
         <View style={styles.setHeaderRow}>
-          <Text style={styles.setHeaderCell}>SET</Text>
-          <Text style={styles.setHeaderCell}>重量(kg)</Text>
-          <Text style={styles.setHeaderCell}>回数</Text>
+          <Text style={[styles.setHeaderCell, { width: 36 }]}>SET</Text>
+          {fields.map((f) => (
+            <Text key={f} style={styles.setHeaderCell}>{FIELD_CONFIG[f].label}</Text>
+          ))}
           <View style={{ width: 32 }} />
         </View>
-        {sets.map((set, i) => (
-          <View key={i} style={styles.setRow}>
-            <Text style={styles.setIndex}>{i + 1}</Text>
-            <Text style={styles.setInput}>{set.weight}</Text>
-            <Text style={styles.setInput}>{set.reps || "-"}</Text>
-            <Pressable
-              style={[styles.checkButton, set.done && styles.checkButtonDone]}
-              onPress={() => completeSet(i)}
-            >
-              {set.done && <Text style={styles.checkMark}>✓</Text>}
-            </Pressable>
-          </View>
-        ))}
+
+        {sets.map((row, i) => {
+          const previous = lastLog?.sets[i];
+          return (
+            <View key={i} style={styles.setRow}>
+              <Text style={styles.setIndex}>{i + 1}</Text>
+              {fields.map((field) => {
+                const config = FIELD_CONFIG[field];
+                const previousValue = previous?.[config.key];
+                return (
+                  <View key={field} style={styles.fieldCell}>
+                    <TextInput
+                      style={styles.setInput}
+                      value={row.values[field] ?? ""}
+                      onChangeText={(text) => setFieldValue(i, field, text)}
+                      placeholder={previousValue !== undefined ? String(previousValue) : "-"}
+                      keyboardType="numeric"
+                      editable={!row.done}
+                    />
+                    {config.step !== undefined && !row.done && (
+                      <View style={styles.stepperRow}>
+                        <Pressable onPress={() => stepField(i, field, -config.step!)} hitSlop={6}>
+                          <Text style={styles.stepperText}>-{config.step}</Text>
+                        </Pressable>
+                        <Pressable onPress={() => stepField(i, field, config.step!)} hitSlop={6}>
+                          <Text style={styles.stepperText}>+{config.step}</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+              <Pressable
+                style={[styles.checkButton, row.done && styles.checkButtonDone]}
+                onPress={() => completeSet(i)}
+              >
+                {row.done && <Text style={styles.checkMark}>✓</Text>}
+              </Pressable>
+            </View>
+          );
+        })}
+
+        <Pressable style={styles.addSetRow} onPress={addSet}>
+          <Text style={styles.addSetText}>+ セット追加</Text>
+        </Pressable>
       </View>
 
       {restSeconds !== null && (
         <View style={styles.restBar}>
           <Text style={styles.restLabel}>休憩中</Text>
-          <Text style={styles.restTime}>{Math.floor(restSeconds / 60)}:{String(restSeconds % 60).padStart(2, "0")}</Text>
-          <Pressable onPress={() => setRestSeconds(null)}>
+          <Text style={styles.restTime}>
+            {Math.floor(restSeconds / 60)}:{String(restSeconds % 60).padStart(2, "0")}
+          </Text>
+          <Pressable onPress={clearRestTimer}>
             <Text style={styles.restSkip}>スキップ</Text>
           </Pressable>
         </View>
       )}
 
-      <Pressable style={styles.finishButton} onPress={finishExercise}>
+      <Pressable style={styles.finishButton} onPress={handleFinish}>
         <Text style={styles.finishButtonText}>この種目を完了</Text>
       </Pressable>
     </View>
@@ -107,8 +307,8 @@ const styles = StyleSheet.create({
   setHeaderCell: { flex: 1, fontSize: 11, color: colors.textMuted },
   setRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   setIndex: { width: 36, textAlign: "center", fontSize: 13, color: colors.textPrimary },
+  fieldCell: { flex: 1, gap: 4 },
   setInput: {
-    flex: 1,
     textAlign: "center",
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -118,6 +318,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
   },
+  stepperRow: { flexDirection: "row", justifyContent: "space-between" },
+  stepperText: { fontSize: 10, color: colors.link },
   checkButton: {
     width: 24,
     height: 24,
@@ -129,6 +331,8 @@ const styles = StyleSheet.create({
   },
   checkButtonDone: { backgroundColor: colors.accent, borderColor: colors.accent },
   checkMark: { color: "#fff", fontSize: 12 },
+  addSetRow: { alignItems: "center", paddingVertical: 10 },
+  addSetText: { color: colors.textMuted, fontSize: 13 },
   restBar: {
     flexDirection: "row",
     alignItems: "center",
