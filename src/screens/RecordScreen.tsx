@@ -10,22 +10,13 @@ import { getLastWorkoutLog, createWorkoutLog } from "@/db/logs";
 import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
 import { scheduleRestEndNotification, cancelRestEndNotification } from "@/timers/restTimer";
+import { FIELD_CONFIG } from "@/constants/recordFields";
+import { formatSetSummary, formatDate } from "@/utils/recordFormat";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Record">;
 
 const REST_DURATION_SECONDS = 90;
 const DEFAULT_SET_COUNT = 3;
-
-const FIELD_CONFIG: Record<
-  RecordFieldType,
-  { label: string; key: keyof SetLog; step?: number }
-> = {
-  weight: { label: "重量(kg)", key: "weight", step: 2.5 },
-  reps: { label: "回数", key: "reps", step: 1 },
-  time: { label: "時間(秒)", key: "timeSec" },
-  distance: { label: "距離(km)", key: "distanceKm" },
-  rpe: { label: "RPE", key: "rpe" },
-};
 
 const PR_LABELS: Record<PersonalRecordType, string> = {
   maxWeight: "最大重量",
@@ -36,25 +27,6 @@ const PR_LABELS: Record<PersonalRecordType, string> = {
 interface SetRowState {
   values: Partial<Record<RecordFieldType, string>>;
   done: boolean;
-}
-
-function formatSetSummary(set: SetLog, fields: RecordFieldType[]): string {
-  const parts: string[] = [];
-  if (fields.includes("weight") && fields.includes("reps") && set.weight !== undefined) {
-    parts.push(`${set.weight}kg×${set.reps ?? "-"}`);
-  } else {
-    if (fields.includes("weight") && set.weight !== undefined) parts.push(`${set.weight}kg`);
-    if (fields.includes("reps") && set.reps !== undefined) parts.push(`${set.reps}回`);
-  }
-  if (fields.includes("time") && set.timeSec !== undefined) parts.push(`${set.timeSec}秒`);
-  if (fields.includes("distance") && set.distanceKm !== undefined) parts.push(`${set.distanceKm}km`);
-  if (fields.includes("rpe") && set.rpe !== undefined) parts.push(`RPE${set.rpe}`);
-  return parts.join(" ") || "-";
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 export default function RecordScreen({ navigation, route }: Props) {
