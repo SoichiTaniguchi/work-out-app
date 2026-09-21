@@ -1,4 +1,4 @@
-import type { RecordFieldType, SetLog } from "@/types";
+import type { PersonalRecordType, RecordFieldType, SetLog } from "@/types";
 
 export const FIELD_CONFIG: Record<
   RecordFieldType,
@@ -9,4 +9,10 @@ export const FIELD_CONFIG: Record<
   time: { label: "時間(秒)", key: "timeSec" },
   distance: { label: "距離(km)", key: "distanceKm" },
   rpe: { label: "RPE", key: "rpe" },
+};
+
+export const PR_LABELS: Record<PersonalRecordType, string> = {
+  maxWeight: "最大重量",
+  maxReps: "最大回数",
+  maxVolume: "総ボリューム",
 };

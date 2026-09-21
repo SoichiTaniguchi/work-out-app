@@ -10,19 +10,13 @@ import { getLastWorkoutLog, createWorkoutLog } from "@/db/logs";
 import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
 import { scheduleRestEndNotification, cancelRestEndNotification } from "@/timers/restTimer";
-import { FIELD_CONFIG } from "@/constants/recordFields";
+import { FIELD_CONFIG, PR_LABELS } from "@/constants/recordFields";
 import { formatSetSummary, formatDate } from "@/utils/recordFormat";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Record">;
 
 const REST_DURATION_SECONDS = 90;
 const DEFAULT_SET_COUNT = 3;
-
-const PR_LABELS: Record<PersonalRecordType, string> = {
-  maxWeight: "最大重量",
-  maxReps: "最大回数",
-  maxVolume: "総ボリューム",
-};
 
 interface SetRowState {
   values: Partial<Record<RecordFieldType, string>>;
