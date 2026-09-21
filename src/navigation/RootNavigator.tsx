@@ -33,8 +33,8 @@ export default function RootNavigator() {
       <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="History" component={HistoryScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="ExerciseEdit" component={ExerciseEditScreen} presentation="modal" />
-      <Stack.Screen name="FolderEdit" component={FolderEditScreen} presentation="modal" />
+      <Stack.Screen name="ExerciseEdit" component={ExerciseEditScreen} options={{ presentation: "modal" }} />
+      <Stack.Screen name="FolderEdit" component={FolderEditScreen} options={{ presentation: "modal" }} />
     </Stack.Navigator>
   );
 }
