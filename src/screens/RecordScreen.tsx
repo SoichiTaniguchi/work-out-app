@@ -194,6 +194,12 @@ export default function RecordScreen({ navigation, route }: Props) {
           <Text style={styles.back}>←</Text>
         </Pressable>
         <Text style={styles.title}>{exercise.name}</Text>
+        <Pressable
+          style={styles.historyLink}
+          onPress={() => navigation.navigate("History", { exerciseId })}
+        >
+          <Text style={styles.historyLinkText}>履歴</Text>
+        </Pressable>
       </View>
 
       <Text style={styles.lastRecord}>{lastSummary}</Text>
@@ -283,6 +289,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: colors.border,
   },
+  historyLink: { marginLeft: "auto" },
+  historyLinkText: { fontSize: 13, color: colors.link, fontWeight: "600" },
   back: { fontSize: 18, color: colors.textPrimary },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
   lastRecord: { padding: 14, paddingHorizontal: 20, backgroundColor: colors.surface, fontSize: 12, color: colors.textSecondary },

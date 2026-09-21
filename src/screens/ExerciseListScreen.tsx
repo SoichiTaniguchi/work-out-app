@@ -63,6 +63,13 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
       <Pressable
         style={styles.iconButton}
         hitSlop={8}
+        onPress={() => navigation.navigate("History", { exerciseId: item.id })}
+      >
+        <Text style={styles.iconText}>📈</Text>
+      </Pressable>
+      <Pressable
+        style={styles.iconButton}
+        hitSlop={8}
         onPress={() =>
           navigation.navigate("ExerciseEdit", { duplicateFromId: item.id, folderId })
         }
