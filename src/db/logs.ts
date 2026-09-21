@@ -36,6 +36,25 @@ async function loadSets(db: SQLiteDatabase, workoutLogId: string): Promise<SetLo
   return rows.map(rowToSetLog);
 }
 
+export async function listWorkoutLogsByExercise(
+  db: SQLiteDatabase,
+  exerciseId: string
+): Promise<WorkoutLog[]> {
+  const rows = await db.getAllAsync<WorkoutLogRow>(
+    "SELECT * FROM workout_logs WHERE exercise_id = ? ORDER BY date ASC;",
+    [exerciseId]
+  );
+
+  return Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      exerciseId: row.exercise_id,
+      date: row.date,
+      sets: await loadSets(db, row.id),
+    }))
+  );
+}
+
 export async function getLastWorkoutLog(
   db: SQLiteDatabase,
   exerciseId: string
