@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import UserSelectScreen from "@/screens/UserSelectScreen";
 import HomeScreen from "@/screens/HomeScreen";
+import FolderListScreen from "@/screens/FolderListScreen";
 import ExerciseListScreen from "@/screens/ExerciseListScreen";
 import RecordScreen from "@/screens/RecordScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
@@ -14,12 +15,13 @@ import FolderEditScreen from "@/screens/FolderEditScreen";
 export type RootStackParamList = {
   UserSelect: undefined;
   Home: { userId: string };
+  FolderList: { userId: string };
   ExerciseList: { folderId: string };
   Record: { exerciseId: string };
   History: { exerciseId: string };
   Settings: undefined;
-  ExerciseEdit: { exerciseId?: string };
-  FolderEdit: { folderId?: string };
+  ExerciseEdit: { exerciseId?: string; duplicateFromId?: string; folderId?: string };
+  FolderEdit: { folderId?: string; userId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -29,6 +31,7 @@ export default function RootNavigator() {
     <Stack.Navigator initialRouteName="UserSelect" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="UserSelect" component={UserSelectScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="FolderList" component={FolderListScreen} />
       <Stack.Screen name="ExerciseList" component={ExerciseListScreen} />
       <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="History" component={HistoryScreen} />

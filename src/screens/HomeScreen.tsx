@@ -6,7 +6,7 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
-export default function HomeScreen({ navigation }: Props) {
+export default function HomeScreen({ navigation, route }: Props) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
@@ -30,6 +30,13 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={styles.primaryButtonText}>記録を始める</Text>
         </Pressable>
       </View>
+
+      <Pressable
+        style={styles.manageLink}
+        onPress={() => navigation.navigate("FolderList", { userId: route.params.userId })}
+      >
+        <Text style={styles.manageLinkText}>プログラム/種目を管理 ›</Text>
+      </Pressable>
 
       <View style={styles.row}>
         <View style={[styles.smallCard, { flex: 1 }]}>
@@ -72,6 +79,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   primaryButtonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  manageLink: { alignSelf: "flex-start" },
+  manageLinkText: { fontSize: 13, color: colors.link, fontWeight: "600" },
   row: { flexDirection: "row", gap: 10 },
   smallCard: {
     backgroundColor: colors.background,
