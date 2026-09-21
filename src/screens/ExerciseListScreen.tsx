@@ -1,52 +1,101 @@
-import React from "react";
-import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, Pressable, StyleSheet, Alert } from "react-native";
+import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
+import { useSQLiteContext } from "expo-sqlite";
 import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import type { Exercise } from "@/types";
+import { useFolderExercises } from "@/hooks/useFolderExercises";
+import { getFolder } from "@/db/folders";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExerciseList">;
 
-// TODO: folderId に紐づく種目一覧をDBから取得する
-const MOCK_EXERCISES = [
-  { id: "e1", name: "ベンチプレス", tags: ["胸", "バーベル"], last: "前回: 60kg × 10 × 3set" },
-  { id: "e2", name: "ダンベルフライ", tags: ["胸", "ダンベル"], last: "前回: 16kg × 12 × 3set" },
-  { id: "e3", name: "腕立て伏せ", tags: ["胸", "自重"], last: "記録項目: 回数のみ" },
-];
+const FIELD_LABELS: Record<string, string> = {
+  weight: "重量",
+  reps: "回数",
+  time: "時間",
+  distance: "距離",
+  rpe: "RPE",
+};
 
-export default function ExerciseListScreen({ navigation }: Props) {
+export default function ExerciseListScreen({ navigation, route }: Props) {
+  const { folderId } = route.params;
+  const db = useSQLiteContext();
+  const [folderName, setFolderName] = useState("");
+  const { exercises, reload, reorder, deletePermanently } = useFolderExercises(folderId);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", reload);
+    return unsubscribe;
+  }, [navigation, reload]);
+
+  useEffect(() => {
+    getFolder(db, folderId).then((folder) => setFolderName(folder?.name ?? ""));
+  }, [db, folderId]);
+
+  const confirmDelete = (exercise: Exercise) => {
+    Alert.alert("種目を削除", `「${exercise.name}」を削除しますか?(全てのプログラムから削除されます)`, [
+      { text: "キャンセル", style: "cancel" },
+      { text: "削除", style: "destructive", onPress: () => deletePermanently(exercise.id) },
+    ]);
+  };
+
+  const renderItem = ({ item, drag, isActive }: RenderItemParams<Exercise>) => (
+    <Pressable
+      style={[styles.row, isActive && styles.rowActive]}
+      onPress={() => navigation.navigate("Record", { exerciseId: item.id })}
+    >
+      <Pressable onPressIn={drag} hitSlop={8}>
+        <Text style={styles.handle}>≡</Text>
+      </Pressable>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.exerciseName}>{item.name}</Text>
+        <View style={styles.tags}>
+          {[...item.bodyParts, item.equipment].filter(Boolean).map((t) => (
+            <Text key={t} style={styles.tag}>{t}</Text>
+          ))}
+        </View>
+        <Text style={styles.last}>
+          記録項目: {item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}
+        </Text>
+      </View>
+      <Pressable
+        style={styles.iconButton}
+        hitSlop={8}
+        onPress={() =>
+          navigation.navigate("ExerciseEdit", { duplicateFromId: item.id, folderId })
+        }
+      >
+        <Text style={styles.iconText}>⧉</Text>
+      </Pressable>
+      <Pressable style={styles.iconButton} hitSlop={8} onPress={() => confirmDelete(item)}>
+        <Text style={styles.iconText}>🗑</Text>
+      </Pressable>
+    </Pressable>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
         </Pressable>
-        <Text style={styles.title}>胸の日</Text>
+        <Text style={styles.title}>{folderName}</Text>
       </View>
 
-      <FlatList
+      <DraggableFlatList
         contentContainerStyle={styles.list}
-        data={MOCK_EXERCISES}
+        data={exercises}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.row}
-            onPress={() => navigation.navigate("Record", { exerciseId: item.id })}
-          >
-            <Text style={styles.handle}>≡</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.exerciseName}>{item.name}</Text>
-              <View style={styles.tags}>
-                {item.tags.map((t) => (
-                  <Text key={t} style={styles.tag}>{t}</Text>
-                ))}
-              </View>
-              <Text style={styles.last}>{item.last}</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        )}
+        renderItem={renderItem}
+        onDragEnd={({ data }) => reorder(data.map((e) => e.id))}
+        ListEmptyComponent={<Text style={styles.empty}>まだ種目がありません</Text>}
         ListFooterComponent={
-          <Pressable style={styles.addRow} onPress={() => navigation.navigate("ExerciseEdit", {})}>
+          <Pressable
+            style={styles.addRow}
+            onPress={() => navigation.navigate("ExerciseEdit", { folderId })}
+          >
             <Text style={styles.addText}>+ 種目を追加(複製/テンプレートから選択も可)</Text>
           </Pressable>
         }
@@ -77,10 +126,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 12,
     padding: 14,
+    backgroundColor: colors.background,
   },
+  rowActive: { borderColor: colors.borderStrong },
   handle: { color: colors.textFaint, width: 16 },
   exerciseName: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
-  tags: { flexDirection: "row", gap: 6, marginTop: 4 },
+  tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   tag: {
     backgroundColor: colors.border,
     borderRadius: 6,
@@ -91,7 +142,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   last: { fontSize: 11, color: colors.textFaint, marginTop: 4 },
-  chevron: { fontSize: 16, color: colors.textFaint },
+  iconButton: { paddingHorizontal: 4 },
+  iconText: { fontSize: 16, color: colors.textMuted },
+  empty: { textAlign: "center", color: colors.textFaint, fontSize: 13, paddingVertical: 20 },
   addRow: {
     alignItems: "center",
     justifyContent: "center",
