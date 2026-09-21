@@ -17,11 +17,17 @@ export interface Folder {
 export interface Exercise {
   id: string;
   userId: string;
-  folderId: string | null;
   name: string;
   bodyParts: string[]; // 部位(自由入力・複数可)
   equipment: string;
   fieldDefinition: RecordFieldType[]; // 記録する項目(MVPは5種類の組み合わせ)
+}
+
+// 種目とフォルダは多対多(1種目を複数フォルダに所属させることが可能)。
+// フォルダ内での表示順はこの中間テーブル側で持つ。
+export interface FolderExercise {
+  folderId: string;
+  exerciseId: string;
   order: number;
 }
 
