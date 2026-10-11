@@ -129,9 +129,9 @@ src/
       レスタイマー+ローカル通知、保存時の自己ベスト判定)
 - [x] 履歴・グラフ画面(SVG折れ線グラフ、種目の記録項目に応じた指標切り替え、自己ベスト表示)
 - [x] ホーム画面(プログラム一覧、今週の記録、直近の自己ベスト)
-- [ ] 認証(ユーザー選択)の実データ化・ユーザー追加UI — 現在はusersテーブルに3人を
-      シードしているだけで、`UserSelectScreen`はモック表示
-- [ ] 設定画面(`SettingsScreen`)— ユーザー切り替え、NAS接続設定、手動同期
+- [x] 認証(ユーザー選択のみ・パスワードなし)— ユーザーの追加・リネーム・削除に対応
+- [x] 設定画面(ユーザー名の変更、ユーザー切り替え、バージョン情報)。NAS接続設定・
+      手動同期の行はNAS連携の実装時に追加する
 - [ ] 完了サマリー画面(仕様書の画面遷移図の`Summary`)— 現在はPR更新をAlertで通知するのみ
 - [ ] NAS上のAPIサーバーとのHTTP通信・オフライン差分同期
 - [ ] `src/native/RestTimerActivity.ts` はJS側インターフェースのみ。実際に
@@ -142,12 +142,10 @@ src/
 
 ## 次のステップ(候補)
 
-1. 認証(ユーザー選択のみ・パスワードなし)の実データ化とユーザー追加UI
-2. 設定画面の実装
-3. 完了サマリー画面の実装
-4. NAS上のAPIサーバー(Node.js + Express、Docker)とのHTTP通信・オフライン差分同期
-5. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
-6. デザイン調整(文字サイズなど)
+1. 完了サマリー画面の実装
+2. NAS上のAPIサーバー(Node.js + Express、Docker)とのHTTP通信・オフライン差分同期
+3. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
+4. デザイン調整(文字サイズなど)
 
 ## SDK 51→57 移行(2026年9月実施)
 

@@ -62,7 +62,7 @@ export default function HomeScreen({ navigation, route }: Props) {
           <Text style={styles.greeting}>こんにちは</Text>
           <Text style={styles.userName}>{userName}さん</Text>
         </View>
-        <Pressable onPress={() => navigation.navigate("Settings")}>
+        <Pressable onPress={() => navigation.navigate("Settings", { userId })}>
           <View style={styles.iconBox} />
         </Pressable>
       </View>

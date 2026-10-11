@@ -20,7 +20,7 @@ export type RootStackParamList = {
   ExerciseList: { folderId: string };
   Record: { exerciseId: string };
   History: { exerciseId: string };
-  Settings: undefined;
+  Settings: { userId: string };
   ExerciseEdit: { exerciseId?: string; folderId?: string; initialBodyPart?: string };
   ExercisePicker: { folderId: string };
   FolderEdit: { folderId?: string; userId: string };
