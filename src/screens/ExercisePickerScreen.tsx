@@ -186,8 +186,19 @@ export default function ExercisePickerScreen({ navigation, route }: Props) {
             </View>
 
             {row.own && (
+              <Pressable
+                hitSlop={8}
+                onPress={() =>
+                  navigation.navigate("ExerciseEdit", { exerciseId: row.own!.id, folderId })
+                }
+              >
+                <Text style={styles.iconButton}>✎</Text>
+              </Pressable>
+            )}
+
+            {row.own && (
               <Pressable hitSlop={8} onPress={() => confirmDelete(row.own!)}>
-                <Text style={styles.deleteIcon}>🗑</Text>
+                <Text style={styles.iconButton}>🗑</Text>
               </Pressable>
             )}
 
@@ -269,7 +280,7 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 11, color: colors.textFaint, marginTop: 2 },
   rowAdd: { fontSize: 12, color: colors.link, fontWeight: "600" },
   rowAdded: { fontSize: 12, color: colors.textFaint },
-  deleteIcon: { fontSize: 14, color: colors.textMuted },
+  iconButton: { fontSize: 14, color: colors.textMuted },
   manualRow: {
     alignItems: "center",
     justifyContent: "center",
