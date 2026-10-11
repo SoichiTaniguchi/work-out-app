@@ -27,7 +27,6 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
   const [userId, setUserId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [bodyParts, setBodyParts] = useState<string[]>([]);
-  const [bodyPartInput, setBodyPartInput] = useState("");
   const [equipment, setEquipment] = useState("");
   const [fields, setFields] = useState<Set<RecordFieldType>>(new Set(["weight", "reps"]));
 
@@ -65,18 +64,6 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
-  };
-
-  const addBodyPart = () => {
-    const value = bodyPartInput.trim();
-    if (value && !bodyParts.includes(value)) {
-      setBodyParts((prev) => [...prev, value]);
-    }
-    setBodyPartInput("");
-  };
-
-  const removeBodyPart = (value: string) => {
-    setBodyParts((prev) => prev.filter((p) => p !== value));
   };
 
   const handleSave = async () => {
@@ -139,30 +126,6 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
         </View>
 
         <View>
-          <Text style={styles.label}>部位(複数可)</Text>
-          <View style={styles.chipRow}>
-            {bodyParts.map((part) => (
-              <Pressable key={part} style={styles.chip} onPress={() => removeBodyPart(part)}>
-                <Text style={styles.chipText}>{part} ✕</Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.inlineInputRow}>
-            <TextInput
-              style={[styles.input, styles.inlineInput]}
-              value={bodyPartInput}
-              onChangeText={setBodyPartInput}
-              placeholder="例: 胸"
-              onSubmitEditing={addBodyPart}
-              returnKeyType="done"
-            />
-            <Pressable style={styles.addChipButton} onPress={addBodyPart}>
-              <Text style={styles.addChipButtonText}>追加</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View>
           <Text style={styles.label}>使用器具</Text>
           <TextInput style={styles.input} value={equipment} onChangeText={setEquipment} placeholder="例: バーベル" />
         </View>
@@ -215,25 +178,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
   },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
-  chip: {
-    backgroundColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  chipText: { fontSize: 12, color: colors.textSecondary },
-  inlineInputRow: { flexDirection: "row", gap: 8 },
-  inlineInput: { flex: 1 },
-  addChipButton: {
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  addChipButtonText: { color: colors.textPrimary, fontSize: 13, fontWeight: "600" },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center" },
   checkboxOn: { backgroundColor: colors.accent, borderColor: colors.accent },
