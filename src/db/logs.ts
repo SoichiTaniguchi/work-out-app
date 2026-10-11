@@ -6,6 +6,7 @@ interface WorkoutLogRow {
   id: string;
   exercise_id: string;
   date: string;
+  completed: number;
 }
 
 interface SetLogRow {
@@ -26,6 +27,16 @@ function rowToSetLog(row: SetLogRow): SetLog {
   if (row.distance_km !== null) set.distanceKm = row.distance_km;
   if (row.rpe !== null) set.rpe = row.rpe;
   return set;
+}
+
+async function rowToWorkoutLog(db: SQLiteDatabase, row: WorkoutLogRow): Promise<WorkoutLog> {
+  return {
+    id: row.id,
+    exerciseId: row.exercise_id,
+    date: row.date,
+    completed: row.completed === 1,
+    sets: await loadSets(db, row.id),
+  };
 }
 
 async function loadSets(db: SQLiteDatabase, workoutLogId: string): Promise<SetLog[]> {
@@ -60,12 +71,9 @@ export async function listWorkoutLogsSince(
 
   return Promise.all(
     rows.map(async (row) => ({
-      id: row.id,
-      exerciseId: row.exercise_id,
+      ...(await rowToWorkoutLog(db, row)),
       exerciseName: row.exercise_name,
       fieldDefinition: JSON.parse(row.field_definition) as RecordFieldType[],
-      date: row.date,
-      sets: await loadSets(db, row.id),
     }))
   );
 }
@@ -79,14 +87,7 @@ export async function listWorkoutLogsByExercise(
     [exerciseId]
   );
 
-  return Promise.all(
-    rows.map(async (row) => ({
-      id: row.id,
-      exerciseId: row.exercise_id,
-      date: row.date,
-      sets: await loadSets(db, row.id),
-    }))
-  );
+  return Promise.all(rows.map((row) => rowToWorkoutLog(db, row)));
 }
 
 // beforeIso を渡すとその日時より前の記録に限定する。記録画面が「前回値」として
@@ -105,14 +106,7 @@ export async function getLastWorkoutLog(
         "SELECT * FROM workout_logs WHERE exercise_id = ? ORDER BY date DESC LIMIT 1;",
         [exerciseId]
       );
-  if (!row) return null;
-
-  return {
-    id: row.id,
-    exerciseId: row.exercise_id,
-    date: row.date,
-    sets: await loadSets(db, row.id),
-  };
+  return row ? rowToWorkoutLog(db, row) : null;
 }
 
 // その日すでに記録済みなら、その記録に追記する(1日1種目1レコード)。
@@ -125,14 +119,15 @@ export async function getWorkoutLogSince(
     "SELECT * FROM workout_logs WHERE exercise_id = ? AND date >= ? ORDER BY date DESC LIMIT 1;",
     [exerciseId, sinceIso]
   );
-  if (!row) return null;
+  return row ? rowToWorkoutLog(db, row) : null;
+}
 
-  return {
-    id: row.id,
-    exerciseId: row.exercise_id,
-    date: row.date,
-    sets: await loadSets(db, row.id),
-  };
+// 「この種目を完了」を押したときだけ立てる。セット単位の保存では変更しない。
+export async function markWorkoutLogCompleted(
+  db: SQLiteDatabase,
+  workoutLogId: string
+): Promise<void> {
+  await db.runAsync("UPDATE workout_logs SET completed = 1 WHERE id = ?;", [workoutLogId]);
 }
 
 // セット数が増減するため、入れ替え方式で更新する。
@@ -153,7 +148,13 @@ export async function createWorkoutLog(
   date: string,
   sets: SetLog[]
 ): Promise<WorkoutLog> {
-  const workoutLog: WorkoutLog = { id: generateId("wl"), exerciseId, date, sets };
+  const workoutLog: WorkoutLog = {
+    id: generateId("wl"),
+    exerciseId,
+    date,
+    sets,
+    completed: false,
+  };
 
   await db.withTransactionAsync(async () => {
     await db.runAsync("INSERT INTO workout_logs (id, exercise_id, date) VALUES (?, ?, ?);", [

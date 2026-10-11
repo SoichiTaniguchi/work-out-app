@@ -8,7 +8,7 @@ const SEED_USERS = [
   { id: "u3", name: "お母さん" },
 ];
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -98,5 +98,17 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       await db.execAsync("PRAGMA user_version = 2;");
     });
     currentVersion = 2;
+  }
+
+  if (currentVersion < 3) {
+    await db.withTransactionAsync(async () => {
+      // 「この種目を完了」を押したかどうか。セット完了ごとの保存では立たないので、
+      // 種目一覧で「実施中」と「完了」を区別できる。既存の記録は実施中扱いになる。
+      await db.execAsync(
+        "ALTER TABLE workout_logs ADD COLUMN completed INTEGER NOT NULL DEFAULT 0;"
+      );
+      await db.execAsync("PRAGMA user_version = 3;");
+    });
+    currentVersion = 3;
   }
 }

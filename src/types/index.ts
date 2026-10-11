@@ -44,6 +44,7 @@ export interface WorkoutLog {
   exerciseId: string;
   date: string; // ISO date
   sets: SetLog[];
+  completed: boolean; // 「この種目を完了」を押したか(セット単位の保存では立たない)
 }
 
 export type PersonalRecordType = "maxWeight" | "maxReps" | "maxVolume";
