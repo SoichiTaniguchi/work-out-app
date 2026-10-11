@@ -48,14 +48,17 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [lastLog, setLastLog] = useState<WorkoutLog | null>(null);
-  // 今日すでに記録済みなら、そのレコードに追記する
-  const [todayLogId, setTodayLogId] = useState<string | null>(null);
   const [sets, setSets] = useState<SetRowState[]>([]);
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
 
   const restIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restEndAtRef = useRef<number | null>(null);
   const notificationIdRef = useRef<string | null>(null);
+  // 今日すでに記録済みならそのレコードに追記する。セット完了ごとに保存するので、
+  // 連続でチェックしても二重に作らないよう ref で持つ。
+  const todayLogIdRef = useRef<string | null>(null);
+  // 完了ボタン経由の離脱では beforeRemove の確認を出さない
+  const leavingAfterSaveRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -68,7 +71,7 @@ export default function RecordScreen({ navigation, route }: Props) {
 
       setExercise(ex);
       setLastLog(last);
-      setTodayLogId(today?.id ?? null);
+      todayLogIdRef.current = today?.id ?? null;
 
       if (today) {
         // 今日の分は完了済みセットとして復元し、続きを入力できるよう空行を1つ足す
@@ -163,22 +166,16 @@ export default function RecordScreen({ navigation, route }: Props) {
     );
   };
 
-  const completeSet = (index: number) => {
-    if (sets[index]?.done) return;
-    setSets((prev) => prev.map((row, i) => (i === index ? { ...row, done: true } : row)));
-    startRestTimer();
-  };
+  // チェック済み、または何か入力されている行を記録対象にする。
+  // チェックを忘れたまま完了しても入力が捨てられないようにするため。
+  const hasInput = (row: SetRowState) =>
+    (exercise?.fieldDefinition ?? []).some((field) => (row.values[field] ?? "").trim() !== "");
 
-  const addSet = () => {
-    setSets((prev) => [...prev, { values: {}, done: false }]);
-  };
-
-  const handleFinish = async () => {
-    if (!exercise) return;
-
-    const resolvedSets: SetLog[] = sets
+  const buildSets = (rows: SetRowState[]): SetLog[] => {
+    if (!exercise) return [];
+    return rows
       .map((row, originalIndex) => {
-        if (!row.done) return null;
+        if (!row.done && !hasInput(row)) return null;
         const set: SetLog = {};
         for (const field of exercise.fieldDefinition) {
           const config = FIELD_CONFIG[field];
@@ -198,19 +195,50 @@ export default function RecordScreen({ navigation, route }: Props) {
         return set;
       })
       .filter((s): s is SetLog => s !== null);
+  };
+
+  const persist = async (rows: SetRowState[]): Promise<SetLog[]> => {
+    const resolved = buildSets(rows);
+    if (resolved.length === 0) return resolved;
+
+    if (todayLogIdRef.current) {
+      await replaceWorkoutLogSets(db, todayLogIdRef.current, resolved);
+    } else {
+      const created = await createWorkoutLog(
+        db,
+        exerciseId,
+        new Date().toISOString(),
+        resolved
+      );
+      todayLogIdRef.current = created.id;
+    }
+    return resolved;
+  };
+
+  const completeSet = async (index: number) => {
+    if (sets[index]?.done) return;
+    const nextSets = sets.map((row, i) => (i === index ? { ...row, done: true } : row));
+    setSets(nextSets);
+    await persist(nextSets);
+    startRestTimer();
+  };
+
+  const addSet = () => {
+    setSets((prev) => [...prev, { values: {}, done: false }]);
+  };
+
+  const handleFinish = async () => {
+    if (!exercise) return;
 
     clearRestTimer();
+    const resolvedSets = await persist(sets);
+    leavingAfterSaveRef.current = true;
 
     if (resolvedSets.length === 0) {
       navigation.goBack();
       return;
     }
 
-    if (todayLogId) {
-      await replaceWorkoutLogSets(db, todayLogId, resolvedSets);
-    } else {
-      await createWorkoutLog(db, exerciseId, new Date().toISOString(), resolvedSets);
-    }
     const newRecords = await evaluateAndSavePersonalRecords(db, exerciseId, resolvedSets);
 
     if (newRecords.length > 0) {
@@ -223,11 +251,46 @@ export default function RecordScreen({ navigation, route }: Props) {
     }
   };
 
+  // チェック済みの行は即保存されているので、未保存なのは「未チェックだが入力がある」行だけ
+  const unsavedRows = sets.filter((row) => !row.done && hasInput(row)).length;
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      if (leavingAfterSaveRef.current || unsavedRows === 0) return;
+      e.preventDefault();
+      Alert.alert(
+        "未記録の入力があります",
+        `チェックの入っていないセットが${unsavedRows}件あります。`,
+        [
+          { text: "キャンセル", style: "cancel" },
+          {
+            text: "破棄して戻る",
+            style: "destructive",
+            onPress: () => {
+              leavingAfterSaveRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+          {
+            text: "記録して戻る",
+            onPress: async () => {
+              await persist(sets);
+              leavingAfterSaveRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  }, [navigation, unsavedRows, sets]);
+
   if (!exercise) {
     return <View style={styles.container} />;
   }
 
   const fields = exercise.fieldDefinition;
+  const pendingSetCount = buildSets(sets).length;
   const lastSummary = lastLog
     ? `前回(${formatDate(lastLog.date)}): ${lastLog.sets.map((s) => formatSetSummary(s, fields)).join(", ")}`
     : "前回の記録はありません";
@@ -267,9 +330,13 @@ export default function RecordScreen({ navigation, route }: Props) {
 
         {sets.map((row, i) => {
           const previous = lastLog?.sets[i];
+          const pending = !row.done && hasInput(row);
           return (
             <View key={i} style={styles.setRow}>
-              <Text style={styles.setIndex}>{i + 1}</Text>
+              <View style={styles.setIndexCell}>
+                <Text style={styles.setIndex}>{i + 1}</Text>
+                {pending && <Text style={styles.pendingMark}>未完了</Text>}
+              </View>
               {fields.map((field) => {
                 const config = FIELD_CONFIG[field];
                 const previousValue = previous?.[config.key];
@@ -297,7 +364,11 @@ export default function RecordScreen({ navigation, route }: Props) {
                 );
               })}
               <Pressable
-                style={[styles.checkButton, row.done && styles.checkButtonDone]}
+                style={[
+                  styles.checkButton,
+                  row.done && styles.checkButtonDone,
+                  pending && styles.checkButtonPending,
+                ]}
                 onPress={() => completeSet(i)}
               >
                 {row.done && <Text style={styles.checkMark}>✓</Text>}
@@ -324,7 +395,11 @@ export default function RecordScreen({ navigation, route }: Props) {
       )}
 
       <Pressable style={styles.finishButton} onPress={handleFinish}>
-        <Text style={styles.finishButtonText}>この種目を完了</Text>
+        <Text style={styles.finishButtonText}>
+          {pendingSetCount > 0
+            ? `${pendingSetCount}セットを記録して完了`
+            : "記録せずに戻る"}
+        </Text>
       </Pressable>
     </KeyboardAvoidingView>
   );
@@ -351,7 +426,9 @@ const styles = StyleSheet.create({
   setHeaderRow: { flexDirection: "row", gap: 8 },
   setHeaderCell: { flex: 1, fontSize: 11, color: colors.textMuted },
   setRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  setIndex: { width: 36, textAlign: "center", fontSize: 13, color: colors.textPrimary },
+  setIndexCell: { width: 36, alignItems: "center" },
+  setIndex: { fontSize: 13, color: colors.textPrimary },
+  pendingMark: { fontSize: 9, color: colors.warning },
   fieldCell: { flex: 1, gap: 4 },
   setInput: {
     textAlign: "center",
@@ -375,6 +452,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   checkButtonDone: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkButtonPending: { borderColor: colors.warning, borderWidth: 2 },
   checkMark: { color: "#fff", fontSize: 12 },
   addSetRow: { alignItems: "center", paddingVertical: 10 },
   addSetText: { color: colors.textMuted, fontSize: 13 },
