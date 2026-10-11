@@ -1,17 +1,18 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import type { PersonalRecordType } from "@/types";
 
-export interface WeeklyStats {
+export interface WorkoutStats {
   exerciseCount: number;
   volume: number;
 }
 
-// 指定日時以降に記録した種目数(ユニーク)と負荷量(Σ 重量×回数)
-export async function getWeeklyStats(
+// 指定日時以降に記録した種目数(ユニーク)と負荷量(Σ 重量×回数)。
+// ホームの「今週の記録」と完了サマリーの「今日のまとめ」で共用する。
+export async function getWorkoutStatsSince(
   db: SQLiteDatabase,
   userId: string,
   sinceIso: string
-): Promise<WeeklyStats> {
+): Promise<WorkoutStats> {
   const row = await db.getFirstAsync<{ exerciseCount: number; volume: number | null }>(
     `SELECT COUNT(DISTINCT wl.exercise_id) as exerciseCount,
             SUM(CASE WHEN sl.weight IS NOT NULL AND sl.reps IS NOT NULL

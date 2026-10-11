@@ -6,18 +6,16 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { getUser } from "@/db/users";
 import { listFolderSummaries, type FolderSummary } from "@/db/folders";
-import { getWeeklyStats, getLatestPersonalRecord, type WeeklyStats, type LatestPersonalRecord } from "@/db/stats";
+import {
+  getWorkoutStatsSince,
+  getLatestPersonalRecord,
+  type WorkoutStats,
+  type LatestPersonalRecord,
+} from "@/db/stats";
 import { PR_LABELS } from "@/constants/recordFields";
+import { startOfWeekIso } from "@/utils/dateRange";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
-
-// 週の起算日は月曜(ローカル時刻の月曜0:00)
-function startOfWeekIso(): string {
-  const now = new Date();
-  const daysSinceMonday = (now.getDay() + 6) % 7;
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
-  return monday.toISOString();
-}
 
 function formatPrValue(record: LatestPersonalRecord): string {
   const unit = record.type === "maxReps" ? "回" : "kg";
@@ -30,14 +28,14 @@ export default function HomeScreen({ navigation, route }: Props) {
 
   const [userName, setUserName] = useState("");
   const [summaries, setSummaries] = useState<FolderSummary[]>([]);
-  const [weekly, setWeekly] = useState<WeeklyStats>({ exerciseCount: 0, volume: 0 });
+  const [weekly, setWeekly] = useState<WorkoutStats>({ exerciseCount: 0, volume: 0 });
   const [latestPr, setLatestPr] = useState<LatestPersonalRecord | null>(null);
 
   const reload = useCallback(async () => {
     const [user, folderSummaries, weeklyStats, pr] = await Promise.all([
       getUser(db, userId),
       listFolderSummaries(db, userId),
-      getWeeklyStats(db, userId, startOfWeekIso()),
+      getWorkoutStatsSince(db, userId, startOfWeekIso()),
       getLatestPersonalRecord(db, userId),
     ]);
     setUserName(user?.name ?? "");
