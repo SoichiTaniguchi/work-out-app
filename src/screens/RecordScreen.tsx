@@ -22,6 +22,7 @@ import {
   getWorkoutLogSince,
   createWorkoutLog,
   replaceWorkoutLogSets,
+  markWorkoutLogCompleted,
 } from "@/db/logs";
 import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
@@ -239,6 +240,9 @@ export default function RecordScreen({ navigation, route }: Props) {
       return;
     }
 
+    if (todayLogIdRef.current) {
+      await markWorkoutLogCompleted(db, todayLogIdRef.current);
+    }
     const newRecords = await evaluateAndSavePersonalRecords(db, exerciseId, resolvedSets);
 
     if (newRecords.length > 0) {

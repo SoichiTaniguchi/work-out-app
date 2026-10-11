@@ -26,17 +26,23 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
   const db = useSQLiteContext();
   const [folderName, setFolderName] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
-  const [todaySetCounts, setTodaySetCounts] = useState<Record<string, number>>({});
+  const [todayStatus, setTodayStatus] = useState<
+    Record<string, { sets: number; completed: boolean }>
+  >({});
   const { exercises, reload, reorder, deletePermanently } = useFolderExercises(folderId);
 
   const reloadToday = useCallback(async () => {
     if (!userId) return;
     const logs = await listWorkoutLogsSince(db, userId, startOfTodayIso());
-    const counts: Record<string, number> = {};
+    const status: Record<string, { sets: number; completed: boolean }> = {};
     for (const log of logs) {
-      counts[log.exerciseId] = (counts[log.exerciseId] ?? 0) + log.sets.length;
+      const current = status[log.exerciseId];
+      status[log.exerciseId] = {
+        sets: (current?.sets ?? 0) + log.sets.length,
+        completed: (current?.completed ?? false) || log.completed,
+      };
     }
-    setTodaySetCounts(counts);
+    setTodayStatus(status);
   }, [db, userId]);
 
   useEffect(() => {
@@ -66,10 +72,17 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
   };
 
   const renderItem = ({ item, drag, isActive }: RenderItemParams<Exercise>) => {
-    const todaySets = todaySetCounts[item.id] ?? 0;
+    const status = todayStatus[item.id];
+    const done = status?.completed ?? false;
+    const inProgress = !!status && !done;
     return (
     <Pressable
-      style={[styles.row, isActive && styles.rowActive, todaySets > 0 && styles.rowDone]}
+      style={[
+        styles.row,
+        isActive && styles.rowActive,
+        inProgress && styles.rowInProgress,
+        done && styles.rowDone,
+      ]}
       onPress={() => navigation.navigate("Record", { exerciseId: item.id })}
     >
       <Pressable onPressIn={drag} hitSlop={8}>
@@ -77,7 +90,8 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
       </Pressable>
       <View style={{ flex: 1 }}>
         <Text style={styles.exerciseName}>
-          {todaySets > 0 && <Text style={styles.doneMark}>✓ </Text>}
+          {done && <Text style={styles.doneMark}>✓ </Text>}
+          {inProgress && <Text style={styles.inProgressMark}>● </Text>}
           {item.name}
         </Text>
         <View style={styles.tags}>
@@ -85,10 +99,14 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
             <Text key={t} style={styles.tag}>{t}</Text>
           ))}
         </View>
-        <Text style={[styles.last, todaySets > 0 && styles.lastDone]}>
-          {todaySets > 0
-            ? `今日 ${todaySets}セット記録済み(タップで追加)`
-            : `記録項目: ${item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}`}
+        <Text
+          style={[styles.last, inProgress && styles.lastInProgress, done && styles.lastDone]}
+        >
+          {done
+            ? `今日 ${status!.sets}セット完了(タップで追加)`
+            : inProgress
+              ? `今日 ${status!.sets}セット記録中(タップで続ける)`
+              : `記録項目: ${item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}`}
         </Text>
       </View>
       <Pressable
@@ -178,7 +196,9 @@ const styles = StyleSheet.create({
   },
   rowActive: { borderColor: colors.borderStrong },
   rowDone: { borderColor: colors.success, backgroundColor: colors.surface },
+  rowInProgress: { borderColor: colors.warning },
   doneMark: { color: colors.success, fontWeight: "700" },
+  inProgressMark: { color: colors.warning, fontWeight: "700" },
   handle: { color: colors.textFaint, width: 16 },
   exerciseName: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
@@ -193,6 +213,7 @@ const styles = StyleSheet.create({
   },
   last: { fontSize: 11, color: colors.textFaint, marginTop: 4 },
   lastDone: { color: colors.success },
+  lastInProgress: { color: colors.warning },
   iconButton: { paddingHorizontal: 4 },
   iconText: { fontSize: 16, color: colors.textMuted },
   empty: { textAlign: "center", color: colors.textFaint, fontSize: 13, paddingVertical: 20 },

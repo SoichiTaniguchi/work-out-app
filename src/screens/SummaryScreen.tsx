@@ -93,7 +93,10 @@ export default function SummaryScreen({ navigation, route }: Props) {
         ) : (
           logs.map((log) => (
             <View key={log.id} style={styles.logCard}>
-              <Text style={styles.logName}>{log.exerciseName}</Text>
+              <Text style={styles.logName}>
+                {log.exerciseName}
+                {!log.completed && <Text style={styles.inProgressMark}> 実施中</Text>}
+              </Text>
               <Text style={styles.logSets}>
                 {log.sets.map((s) => formatSetSummary(s, log.fieldDefinition)).join(", ")}
               </Text>
@@ -154,6 +157,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   logName: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
+  inProgressMark: { fontSize: 11, fontWeight: "400", color: colors.warning },
   logSets: { fontSize: 12, color: colors.textSecondary },
   empty: { fontSize: 13, color: colors.textFaint, textAlign: "center", paddingVertical: 20 },
   homeButton: {
