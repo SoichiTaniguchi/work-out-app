@@ -21,6 +21,42 @@ export async function listFoldersByUser(db: SQLiteDatabase, userId: string): Pro
   return rows.map(rowToFolder);
 }
 
+export interface FolderSummary {
+  folder: Folder;
+  exerciseCount: number;
+  exerciseNames: string[];
+}
+
+// ホーム画面用。フォルダごとに listExercisesByFolder を呼ぶN+1を避けるため1クエリで取得する。
+export async function listFolderSummaries(
+  db: SQLiteDatabase,
+  userId: string
+): Promise<FolderSummary[]> {
+  const rows = await db.getAllAsync<FolderRow & { exercise_name: string | null }>(
+    `SELECT f.*, e.name as exercise_name
+     FROM folders f
+     LEFT JOIN folder_exercises fe ON fe.folder_id = f.id
+     LEFT JOIN exercises e ON e.id = fe.exercise_id
+     WHERE f.user_id = ?
+     ORDER BY f.order_index ASC, fe.order_index ASC;`,
+    [userId]
+  );
+
+  const summaries: FolderSummary[] = [];
+  for (const row of rows) {
+    let summary = summaries.find((s) => s.folder.id === row.id);
+    if (!summary) {
+      summary = { folder: rowToFolder(row), exerciseCount: 0, exerciseNames: [] };
+      summaries.push(summary);
+    }
+    if (row.exercise_name !== null) {
+      summary.exerciseCount += 1;
+      summary.exerciseNames.push(row.exercise_name);
+    }
+  }
+  return summaries;
+}
+
 export async function getFolder(db: SQLiteDatabase, id: string): Promise<Folder | null> {
   const row = await db.getFirstAsync<FolderRow>("SELECT * FROM folders WHERE id = ?;", [id]);
   return row ? rowToFolder(row) : null;
