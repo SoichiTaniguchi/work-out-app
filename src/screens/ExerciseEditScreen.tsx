@@ -5,7 +5,13 @@ import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { RecordFieldType } from "@/types";
-import { createExercise, deleteExercise, getExercise, updateExercise } from "@/db/exercises";
+import {
+  createExercise,
+  deleteExercise,
+  getExercise,
+  listUsedBodyParts,
+  updateExercise,
+} from "@/db/exercises";
 import { getFolder } from "@/db/folders";
 import { BODY_PARTS } from "@/constants/presetExercises";
 
@@ -30,13 +36,18 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
   const [bodyParts, setBodyParts] = useState<string[]>(initialBodyPart ? [initialBodyPart] : []);
   const [equipment, setEquipment] = useState("");
   const [fields, setFields] = useState<Set<RecordFieldType>>(new Set(["weight", "reps"]));
+  const [usedParts, setUsedParts] = useState<string[]>([]);
+  const [addingPart, setAddingPart] = useState(false);
+  const [newPartInput, setNewPartInput] = useState("");
 
   useEffect(() => {
     (async () => {
+      let resolvedUserId: string | null = null;
+
       if (exerciseId) {
         const exercise = await getExercise(db, exerciseId);
         if (exercise) {
-          setUserId(exercise.userId);
+          resolvedUserId = exercise.userId;
           setName(exercise.name);
           setBodyParts(exercise.bodyParts);
           setEquipment(exercise.equipment);
@@ -45,7 +56,7 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
       } else if (duplicateFromId) {
         const source = await getExercise(db, duplicateFromId);
         if (source) {
-          setUserId(source.userId);
+          resolvedUserId = source.userId;
           setName(`${source.name} のコピー`);
           setBodyParts(source.bodyParts);
           setEquipment(source.equipment);
@@ -53,7 +64,12 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
         }
       } else if (folderId) {
         const folder = await getFolder(db, folderId);
-        setUserId(folder?.userId ?? null);
+        resolvedUserId = folder?.userId ?? null;
+      }
+
+      setUserId(resolvedUserId);
+      if (resolvedUserId) {
+        setUsedParts(await listUsedBodyParts(db, resolvedUserId));
       }
       setReady(true);
     })();
@@ -63,6 +79,15 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
     setBodyParts((prev) =>
       prev.includes(part) ? prev.filter((p) => p !== part) : [...prev, part]
     );
+  };
+
+  const addCustomBodyPart = () => {
+    const value = newPartInput.trim();
+    if (value && !bodyParts.includes(value)) {
+      setBodyParts((prev) => [...prev, value]);
+    }
+    setNewPartInput("");
+    setAddingPart(false);
   };
 
   const toggleField = (key: RecordFieldType) => {
@@ -114,6 +139,9 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
     return <View style={styles.container} />;
   }
 
+  // プリセット9部位 + 他の種目で使われている部位 + この種目で選択中の部位
+  const partOptions = [...new Set([...BODY_PARTS, ...usedParts, ...bodyParts])];
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -135,7 +163,7 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
         <View>
           <Text style={styles.label}>部位(複数選択可)</Text>
           <View style={styles.pillRow}>
-            {BODY_PARTS.map((part) => {
+            {partOptions.map((part) => {
               const selected = bodyParts.includes(part);
               return (
                 <Pressable
@@ -147,7 +175,26 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
                 </Pressable>
               );
             })}
+            <Pressable style={styles.pillAdd} onPress={() => setAddingPart((prev) => !prev)}>
+              <Text style={styles.pillAddText}>{addingPart ? "キャンセル" : "+ 部位を追加"}</Text>
+            </Pressable>
           </View>
+          {addingPart && (
+            <View style={styles.inlineInputRow}>
+              <TextInput
+                style={[styles.input, styles.inlineInput]}
+                value={newPartInput}
+                onChangeText={setNewPartInput}
+                placeholder="例: 二頭"
+                onSubmitEditing={addCustomBodyPart}
+                returnKeyType="done"
+                autoFocus
+              />
+              <Pressable style={styles.addPartButton} onPress={addCustomBodyPart}>
+                <Text style={styles.addPartButtonText}>追加</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         <View>
@@ -215,6 +262,26 @@ const styles = StyleSheet.create({
   pillSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
   pillText: { fontSize: 13, color: colors.textSecondary },
   pillTextSelected: { color: "#fff", fontWeight: "600" },
+  pillAdd: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.textFaint,
+  },
+  pillAddText: { fontSize: 13, color: colors.link, fontWeight: "600" },
+  inlineInputRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  inlineInput: { flex: 1 },
+  addPartButton: {
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  addPartButtonText: { color: colors.textPrimary, fontSize: 13, fontWeight: "600" },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center" },
   checkboxOn: { backgroundColor: colors.accent, borderColor: colors.accent },

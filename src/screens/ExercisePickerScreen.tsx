@@ -65,16 +65,18 @@ export default function ExercisePickerScreen({ navigation, route }: Props) {
     return unsubscribe;
   }, [navigation, reload]);
 
-  // プリセットの9部位に当てはまらない(部位未設定を含む)自分の種目は「その他」に寄せる
-  const hasOther = ownExercises.some(
-    (e) => !e.bodyParts.some((part) => BODY_PARTS.includes(part))
-  );
-  const parts = hasOther ? [...BODY_PARTS, OTHER] : BODY_PARTS;
+  // プリセット9部位 + ユーザーが独自に付けた部位(例: 腕を二頭/三頭に分けた場合)
+  const customParts = [
+    ...new Set(
+      ownExercises.flatMap((e) => e.bodyParts.filter((part) => !BODY_PARTS.includes(part)))
+    ),
+  ];
+  // どのピルにも該当しない = 部位が未設定の種目だけを「その他」に寄せる
+  const hasOther = ownExercises.some((e) => e.bodyParts.length === 0);
+  const parts = [...BODY_PARTS, ...customParts, ...(hasOther ? [OTHER] : [])];
 
   const ownForPart = ownExercises.filter((e) =>
-    selectedPart === OTHER
-      ? !e.bodyParts.some((part) => BODY_PARTS.includes(part))
-      : e.bodyParts.includes(selectedPart)
+    selectedPart === OTHER ? e.bodyParts.length === 0 : e.bodyParts.includes(selectedPart)
   );
   const presetsForPart =
     PRESET_GROUPS.find((g) => g.bodyPart === selectedPart)?.exercises ?? [];
