@@ -23,6 +23,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
   const { folderId } = route.params;
   const db = useSQLiteContext();
   const [folderName, setFolderName] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
   const { exercises, reload, reorder, deletePermanently } = useFolderExercises(folderId);
 
   useEffect(() => {
@@ -31,7 +32,10 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
   }, [navigation, reload]);
 
   useEffect(() => {
-    getFolder(db, folderId).then((folder) => setFolderName(folder?.name ?? ""));
+    getFolder(db, folderId).then((folder) => {
+      setFolderName(folder?.name ?? "");
+      setUserId(folder?.userId ?? null);
+    });
   }, [db, folderId]);
 
   const confirmDelete = (exercise: Exercise) => {
@@ -97,12 +101,23 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         onDragEnd={({ data }) => reorder(data.map((e) => e.id))}
         ListEmptyComponent={<Text style={styles.empty}>まだ種目がありません</Text>}
         ListFooterComponent={
-          <Pressable
-            style={styles.addRow}
-            onPress={() => navigation.navigate("ExercisePicker", { folderId })}
-          >
-            <Text style={styles.addText}>+ 種目を追加</Text>
-          </Pressable>
+          <>
+            <Pressable
+              style={styles.addRow}
+              onPress={() => navigation.navigate("ExercisePicker", { folderId })}
+            >
+              <Text style={styles.addText}>+ 種目を追加</Text>
+            </Pressable>
+
+            {userId && (
+              <Pressable
+                style={styles.finishRow}
+                onPress={() => navigation.navigate("Summary", { userId })}
+              >
+                <Text style={styles.finishText}>今日のトレーニングを終了</Text>
+              </Pressable>
+            )}
+          </>
         }
       />
     </View>
@@ -161,4 +176,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   addText: { color: colors.textMuted, fontSize: 14 },
+  finishRow: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    marginTop: 10,
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+  },
+  finishText: { color: "#fff", fontSize: 14, fontWeight: "600" },
 });

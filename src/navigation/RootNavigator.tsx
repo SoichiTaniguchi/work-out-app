@@ -8,6 +8,7 @@ import ExerciseListScreen from "@/screens/ExerciseListScreen";
 import RecordScreen from "@/screens/RecordScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
+import SummaryScreen from "@/screens/SummaryScreen";
 import ExerciseEditScreen from "@/screens/ExerciseEditScreen";
 import ExercisePickerScreen from "@/screens/ExercisePickerScreen";
 import FolderEditScreen from "@/screens/FolderEditScreen";
@@ -20,6 +21,7 @@ export type RootStackParamList = {
   ExerciseList: { folderId: string };
   Record: { exerciseId: string };
   History: { exerciseId: string };
+  Summary: { userId: string };
   Settings: { userId: string };
   ExerciseEdit: { exerciseId?: string; folderId?: string; initialBodyPart?: string };
   ExercisePicker: { folderId: string };
@@ -37,6 +39,7 @@ export default function RootNavigator() {
       <Stack.Screen name="ExerciseList" component={ExerciseListScreen} />
       <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="History" component={HistoryScreen} />
+      <Stack.Screen name="Summary" component={SummaryScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="ExerciseEdit" component={ExerciseEditScreen} options={{ presentation: "modal" }} />
       <Stack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: "modal" }} />
