@@ -7,6 +7,7 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { RecordFieldType } from "@/types";
 import { createExercise, deleteExercise, getExercise, updateExercise } from "@/db/exercises";
 import { getFolder } from "@/db/folders";
+import { BODY_PARTS } from "@/constants/presetExercises";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExerciseEdit">;
 
@@ -19,14 +20,14 @@ const FIELD_OPTIONS: { key: RecordFieldType; label: string }[] = [
 ];
 
 export default function ExerciseEditScreen({ navigation, route }: Props) {
-  const { exerciseId, duplicateFromId, folderId } = route.params ?? {};
+  const { exerciseId, duplicateFromId, folderId, initialBodyPart } = route.params ?? {};
   const isEdit = !!exerciseId;
   const db = useSQLiteContext();
 
   const [ready, setReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [bodyParts, setBodyParts] = useState<string[]>([]);
+  const [bodyParts, setBodyParts] = useState<string[]>(initialBodyPart ? [initialBodyPart] : []);
   const [equipment, setEquipment] = useState("");
   const [fields, setFields] = useState<Set<RecordFieldType>>(new Set(["weight", "reps"]));
 
@@ -57,6 +58,12 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
       setReady(true);
     })();
   }, [db, exerciseId, duplicateFromId, folderId]);
+
+  const toggleBodyPart = (part: string) => {
+    setBodyParts((prev) =>
+      prev.includes(part) ? prev.filter((p) => p !== part) : [...prev, part]
+    );
+  };
 
   const toggleField = (key: RecordFieldType) => {
     setFields((prev) => {
@@ -126,6 +133,24 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
         </View>
 
         <View>
+          <Text style={styles.label}>部位(複数選択可)</Text>
+          <View style={styles.pillRow}>
+            {BODY_PARTS.map((part) => {
+              const selected = bodyParts.includes(part);
+              return (
+                <Pressable
+                  key={part}
+                  style={[styles.pill, selected && styles.pillSelected]}
+                  onPress={() => toggleBodyPart(part)}
+                >
+                  <Text style={[styles.pillText, selected && styles.pillTextSelected]}>{part}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View>
           <Text style={styles.label}>使用器具</Text>
           <TextInput style={styles.input} value={equipment} onChangeText={setEquipment} placeholder="例: バーベル" />
         </View>
@@ -178,6 +203,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
   },
+  pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  pill: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pillSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  pillText: { fontSize: 13, color: colors.textSecondary },
+  pillTextSelected: { color: "#fff", fontWeight: "600" },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center" },
   checkboxOn: { backgroundColor: colors.accent, borderColor: colors.accent },

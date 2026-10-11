@@ -122,3 +122,6 @@ export const PRESET_GROUPS: { bodyPart: string; exercises: PresetExercise[] }[] 
     ],
   },
 ];
+
+// 種目フォームの部位選択と種目追加画面の部位タブで共用する。PRESET_GROUPSが唯一の情報源。
+export const BODY_PARTS = PRESET_GROUPS.map((group) => group.bodyPart);
