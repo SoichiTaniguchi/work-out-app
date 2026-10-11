@@ -1,39 +1,101 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { useSQLiteContext } from "expo-sqlite";
 import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import { getUser } from "@/db/users";
+import { listFolderSummaries, type FolderSummary } from "@/db/folders";
+import { getWeeklyStats, getLatestPersonalRecord, type WeeklyStats, type LatestPersonalRecord } from "@/db/stats";
+import { PR_LABELS } from "@/constants/recordFields";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
+// 週の起算日は月曜(ローカル時刻の月曜0:00)
+function startOfWeekIso(): string {
+  const now = new Date();
+  const daysSinceMonday = (now.getDay() + 6) % 7;
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+  return monday.toISOString();
+}
+
+function formatPrValue(record: LatestPersonalRecord): string {
+  const unit = record.type === "maxReps" ? "回" : "kg";
+  return `${record.value}${unit}`;
+}
+
 export default function HomeScreen({ navigation, route }: Props) {
+  const { userId } = route.params;
+  const db = useSQLiteContext();
+
+  const [userName, setUserName] = useState("");
+  const [summaries, setSummaries] = useState<FolderSummary[]>([]);
+  const [weekly, setWeekly] = useState<WeeklyStats>({ exerciseCount: 0, volume: 0 });
+  const [latestPr, setLatestPr] = useState<LatestPersonalRecord | null>(null);
+
+  const reload = useCallback(async () => {
+    const [user, folderSummaries, weeklyStats, pr] = await Promise.all([
+      getUser(db, userId),
+      listFolderSummaries(db, userId),
+      getWeeklyStats(db, userId, startOfWeekIso()),
+      getLatestPersonalRecord(db, userId),
+    ]);
+    setUserName(user?.name ?? "");
+    setSummaries(folderSummaries);
+    setWeekly(weeklyStats);
+    setLatestPr(pr);
+  }, [db, userId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", reload);
+    return unsubscribe;
+  }, [navigation, reload]);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>こんにちは</Text>
-          <Text style={styles.userName}>そーいちさん</Text>
+          <Text style={styles.userName}>{userName}さん</Text>
         </View>
         <Pressable onPress={() => navigation.navigate("Settings")}>
           <View style={styles.iconBox} />
         </Pressable>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>今日のプログラム</Text>
-        <Text style={styles.cardTitle}>胸の日</Text>
-        <Text style={styles.cardDesc}>ベンチプレス・ダンベルフライ 他3種目</Text>
+      <Text style={styles.sectionTitle}>プログラム</Text>
+      {summaries.length === 0 ? (
         <Pressable
-          style={styles.primaryButton}
-          onPress={() => navigation.navigate("ExerciseList", { folderId: "f1" })}
+          style={styles.emptyCard}
+          onPress={() => navigation.navigate("FolderEdit", { userId })}
         >
-          <Text style={styles.primaryButtonText}>記録を始める</Text>
+          <Text style={styles.emptyTitle}>プログラムがまだありません</Text>
+          <Text style={styles.emptyDesc}>+ 最初のプログラムを作成する</Text>
         </Pressable>
-      </View>
+      ) : (
+        summaries.map(({ folder, exerciseCount, exerciseNames }) => (
+          <Pressable
+            key={folder.id}
+            style={styles.card}
+            onPress={() => navigation.navigate("ExerciseList", { folderId: folder.id })}
+          >
+            <Text style={styles.cardTitle}>{folder.name}</Text>
+            <Text style={styles.cardDesc}>
+              {exerciseCount === 0
+                ? "種目がまだ登録されていません"
+                : `${exerciseNames.slice(0, 3).join("・")}${exerciseCount > 3 ? ` 他${exerciseCount - 3}種目` : ""}`}
+            </Text>
+          </Pressable>
+        ))
+      )}
 
       <Pressable
         style={styles.manageLink}
-        onPress={() => navigation.navigate("FolderList", { userId: route.params.userId })}
+        onPress={() => navigation.navigate("FolderList", { userId })}
       >
         <Text style={styles.manageLinkText}>プログラム/種目を管理 ›</Text>
       </Pressable>
@@ -41,11 +103,17 @@ export default function HomeScreen({ navigation, route }: Props) {
       <View style={styles.row}>
         <View style={[styles.smallCard, { flex: 1 }]}>
           <Text style={styles.cardLabel}>自己ベスト更新</Text>
-          <Text style={styles.smallCardValue}>ベンチプレス 65kg</Text>
+          <Text style={styles.smallCardValue}>
+            {latestPr ? `${latestPr.exerciseName} ${formatPrValue(latestPr)}` : "-"}
+          </Text>
+          {latestPr && <Text style={styles.smallCardSub}>{PR_LABELS[latestPr.type]}</Text>}
         </View>
         <View style={[styles.smallCard, { flex: 1 }]}>
           <Text style={styles.cardLabel}>今週の記録</Text>
-          <Text style={styles.smallCardValue}>3 回</Text>
+          <Text style={styles.smallCardValue}>{weekly.exerciseCount} 種目</Text>
+          <Text style={styles.smallCardSub}>
+            負荷量 {weekly.volume.toLocaleString()}kg
+          </Text>
         </View>
       </View>
     </ScrollView>
@@ -54,34 +122,43 @@ export default function HomeScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingTop: 56, gap: 16 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  content: { padding: 20, paddingTop: 56, gap: 12 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
   greeting: { fontSize: 12, color: colors.textMuted },
   userName: { fontSize: 20, fontWeight: "700", color: colors.textPrimary },
   iconBox: { width: 24, height: 24, borderRadius: 6, backgroundColor: colors.borderStrong },
+  sectionTitle: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
   card: {
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     borderRadius: 12,
-    padding: 18,
-    gap: 8,
+    padding: 16,
+    gap: 4,
   },
   cardLabel: { fontSize: 11, color: colors.textMuted },
-  cardTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
-  cardDesc: { fontSize: 13, color: colors.textSecondary },
-  primaryButton: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.accent,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    marginTop: 6,
+  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
+  cardDesc: { fontSize: 12, color: colors.textSecondary },
+  emptyCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.textFaint,
+    borderRadius: 12,
+    gap: 4,
   },
-  primaryButtonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  manageLink: { alignSelf: "flex-start" },
+  emptyTitle: { fontSize: 14, color: colors.textSecondary },
+  emptyDesc: { fontSize: 13, color: colors.link, fontWeight: "600" },
+  manageLink: { alignSelf: "flex-start", paddingVertical: 4 },
   manageLinkText: { fontSize: 13, color: colors.link, fontWeight: "600" },
-  row: { flexDirection: "row", gap: 10 },
+  row: { flexDirection: "row", gap: 10, marginTop: 4 },
   smallCard: {
     backgroundColor: colors.background,
     borderWidth: 1,
@@ -90,4 +167,5 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   smallCardValue: { fontSize: 14, fontWeight: "700", color: colors.textPrimary, marginTop: 4 },
+  smallCardSub: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
 });
