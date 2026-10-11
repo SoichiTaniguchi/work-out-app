@@ -31,6 +31,28 @@ export async function getPersonalRecords(
   return rows.map(rowToPersonalRecord);
 }
 
+// 完了サマリー用。指定日時以降に達成した自己ベストを種目名付きで返す。
+export interface PersonalRecordWithExercise extends PersonalRecord {
+  exerciseName: string;
+}
+
+export async function listPersonalRecordsSince(
+  db: SQLiteDatabase,
+  userId: string,
+  sinceIso: string
+): Promise<PersonalRecordWithExercise[]> {
+  const rows = await db.getAllAsync<PersonalRecordRow & { exercise_name: string }>(
+    `SELECT pr.*, e.name as exercise_name
+     FROM personal_records pr
+     INNER JOIN exercises e ON e.id = pr.exercise_id
+     WHERE e.user_id = ? AND pr.achieved_at >= ?
+     ORDER BY pr.achieved_at ASC;`,
+    [userId, sinceIso]
+  );
+
+  return rows.map((row) => ({ ...rowToPersonalRecord(row), exerciseName: row.exercise_name }));
+}
+
 function computeCandidates(sets: SetLog[]): Partial<Record<PersonalRecordType, number>> {
   const weights = sets.map((s) => s.weight).filter((v): v is number => v !== undefined);
   const reps = sets.map((s) => s.reps).filter((v): v is number => v !== undefined);

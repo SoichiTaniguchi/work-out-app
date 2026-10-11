@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import type { SetLog, WorkoutLog } from "@/types";
+import type { RecordFieldType, SetLog, WorkoutLog } from "@/types";
 import { generateId } from "@/db/id";
 
 interface WorkoutLogRow {
@@ -34,6 +34,40 @@ async function loadSets(db: SQLiteDatabase, workoutLogId: string): Promise<SetLo
     [workoutLogId]
   );
   return rows.map(rowToSetLog);
+}
+
+// 完了サマリー用。種目名と記録項目定義を一緒に返すので、画面側で種目を引き直さずに表示できる。
+export interface WorkoutLogWithExercise extends WorkoutLog {
+  exerciseName: string;
+  fieldDefinition: RecordFieldType[];
+}
+
+export async function listWorkoutLogsSince(
+  db: SQLiteDatabase,
+  userId: string,
+  sinceIso: string
+): Promise<WorkoutLogWithExercise[]> {
+  const rows = await db.getAllAsync<
+    WorkoutLogRow & { exercise_name: string; field_definition: string }
+  >(
+    `SELECT wl.*, e.name as exercise_name, e.field_definition as field_definition
+     FROM workout_logs wl
+     INNER JOIN exercises e ON e.id = wl.exercise_id
+     WHERE e.user_id = ? AND wl.date >= ?
+     ORDER BY wl.date ASC;`,
+    [userId, sinceIso]
+  );
+
+  return Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      exerciseId: row.exercise_id,
+      exerciseName: row.exercise_name,
+      fieldDefinition: JSON.parse(row.field_definition) as RecordFieldType[],
+      date: row.date,
+      sets: await loadSets(db, row.id),
+    }))
+  );
 }
 
 export async function listWorkoutLogsByExercise(
