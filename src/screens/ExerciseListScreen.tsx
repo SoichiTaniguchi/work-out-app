@@ -74,15 +74,6 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
       >
         <Text style={styles.iconText}>📈</Text>
       </Pressable>
-      <Pressable
-        style={styles.iconButton}
-        hitSlop={8}
-        onPress={() =>
-          navigation.navigate("ExerciseEdit", { duplicateFromId: item.id, folderId })
-        }
-      >
-        <Text style={styles.iconText}>⧉</Text>
-      </Pressable>
       <Pressable style={styles.iconButton} hitSlop={8} onPress={() => confirmDelete(item)}>
         <Text style={styles.iconText}>🗑</Text>
       </Pressable>

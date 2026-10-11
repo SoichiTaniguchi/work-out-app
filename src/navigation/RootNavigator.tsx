@@ -21,12 +21,7 @@ export type RootStackParamList = {
   Record: { exerciseId: string };
   History: { exerciseId: string };
   Settings: undefined;
-  ExerciseEdit: {
-    exerciseId?: string;
-    duplicateFromId?: string;
-    folderId?: string;
-    initialBodyPart?: string;
-  };
+  ExerciseEdit: { exerciseId?: string; folderId?: string; initialBodyPart?: string };
   ExercisePicker: { folderId: string };
   FolderEdit: { folderId?: string; userId: string };
 };

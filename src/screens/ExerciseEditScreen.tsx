@@ -26,7 +26,7 @@ const FIELD_OPTIONS: { key: RecordFieldType; label: string }[] = [
 ];
 
 export default function ExerciseEditScreen({ navigation, route }: Props) {
-  const { exerciseId, duplicateFromId, folderId, initialBodyPart } = route.params ?? {};
+  const { exerciseId, folderId, initialBodyPart } = route.params ?? {};
   const isEdit = !!exerciseId;
   const db = useSQLiteContext();
 
@@ -53,15 +53,6 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
           setEquipment(exercise.equipment);
           setFields(new Set(exercise.fieldDefinition));
         }
-      } else if (duplicateFromId) {
-        const source = await getExercise(db, duplicateFromId);
-        if (source) {
-          resolvedUserId = source.userId;
-          setName(`${source.name} のコピー`);
-          setBodyParts(source.bodyParts);
-          setEquipment(source.equipment);
-          setFields(new Set(source.fieldDefinition));
-        }
       } else if (folderId) {
         const folder = await getFolder(db, folderId);
         resolvedUserId = folder?.userId ?? null;
@@ -73,7 +64,7 @@ export default function ExerciseEditScreen({ navigation, route }: Props) {
       }
       setReady(true);
     })();
-  }, [db, exerciseId, duplicateFromId, folderId]);
+  }, [db, exerciseId, folderId]);
 
   const toggleBodyPart = (part: string) => {
     setBodyParts((prev) =>
