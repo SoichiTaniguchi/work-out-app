@@ -118,22 +118,45 @@ src/
 - [x] iOS向け`eas build:configure`実施(EAS Build自体はApple Developer Program未登録のため保留中)
 - [ ] Dev Clientのクラウドビルド(`eas build --profile development --platform ios`) — Apple Developer Program登録後に実施
 - [x] Expo Goでの開発・確認フローに切り替え(当面はこちらで進める)
-- [ ] 画面遷移・レイアウトはワイヤーフレーム通りに配置済み(ダミーデータ表示のみ、実データ連携は未実装)
-- [ ] SQLite / API連携、認証(ユーザー選択)、同期処理は未実装(各ファイルのTODOコメントを参照)
+- [x] 画面遷移・レイアウトはワイヤーフレーム通りに配置
+- [x] `expo-sqlite`によるローカルDB(users / folders / exercises / folder_exercises /
+      workout_logs / set_logs / personal_records)
+- [x] 種目管理(種目のCRUD、記録項目のカスタマイズ、ドラッグ並び替え、複製、
+      フォルダ/プログラム分け、フォルダのテンプレート化)
+- [x] トレーニング記録画面(記録項目に応じた動的入力、前回値の自動表示・差分入力、
+      レスタイマー+ローカル通知、保存時の自己ベスト判定)
+- [x] 履歴・グラフ画面(SVG折れ線グラフ、種目の記録項目に応じた指標切り替え、自己ベスト表示)
+- [x] ホーム画面(プログラム一覧、今週の記録、直近の自己ベスト)
+- [ ] 認証(ユーザー選択)の実データ化・ユーザー追加UI — 現在はusersテーブルに3人を
+      シードしているだけで、`UserSelectScreen`はモック表示
+- [ ] 設定画面(`SettingsScreen`)— ユーザー切り替え、NAS接続設定、手動同期
+- [ ] 完了サマリー画面(仕様書の画面遷移図の`Summary`)— 現在はPR更新をAlertで通知するのみ
+- [ ] NAS上のAPIサーバーとのHTTP通信・オフライン差分同期
 - [ ] `src/native/RestTimerActivity.ts` はJS側インターフェースのみ。実際に
       Dynamic Islandへ表示するには、Swiftで書いたLive Activities
       (ActivityKit)のネイティブモジュールを別途実装し、Expo Config Plugin
       または `expo prebuild` で生成されるiOSプロジェクトに組み込む必要があります。
-- [ ] レスタイマー終了時のアラーム音は `expo-notifications` 等でローカル通知を
-      スケジュールする方式を想定していますが未実装です。
+- [ ] デザイン調整(文字サイズなど)— 機能が一通り揃ってから着手する方針
+
+## 既知の不具合(未対応)
+
+- **種目を追加したあとに種目の修正ができない**
+  `ExerciseEditScreen`は`exerciseId`を受け取る編集モードを実装済みだが、種目一覧
+  (`ExerciseListScreen`)とフォルダ編集画面(`FolderEditScreen`)のどちらにも編集への
+  導線(✎アイコン等)が無いため、作成した種目を開いて直すことができない。
+  種目一覧の行タップは記録画面へ遷移する。
+- **記録中に数値キーボードが「この種目を完了」ボタンを覆ってしまう**
+  `RecordScreen`はスクロールしない`View`構成で`KeyboardAvoidingView`も使っていないため、
+  セットの数値入力でソフトウェアキーボードが出ると画面下部の完了ボタンが隠れて押せない。
 
 ## 次のステップ(候補)
 
-1. `npx expo start` + Expo Goで画面遷移を実機確認する
-2. `expo-sqlite` を使ったローカルDB(仕様書のテーブル定義通り)の実装
-3. NAS上のAPIサーバー(Node.js + Express、Docker)とのHTTP通信・オフライン差分同期
-4. 認証(ユーザー選択のみ・パスワードなし)のローカル永続化
+1. 上記「既知の不具合」の修正
+2. 認証(ユーザー選択のみ・パスワードなし)の実データ化とユーザー追加UI
+3. 設定画面の実装
+4. NAS上のAPIサーバー(Node.js + Express、Docker)とのHTTP通信・オフライン差分同期
 5. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
+6. デザイン調整(文字サイズなど)
 
 ## SDK 51→57 移行(2026年9月実施)
 
