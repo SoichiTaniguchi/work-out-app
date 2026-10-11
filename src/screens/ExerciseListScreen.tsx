@@ -8,7 +8,7 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { Exercise } from "@/types";
 import { useFolderExercises } from "@/hooks/useFolderExercises";
 import { getFolder } from "@/db/folders";
-import { listWorkoutLogsSince } from "@/db/logs";
+import { listWorkoutLogsSince, markWorkoutLogCompleted } from "@/db/logs";
 import { startOfTodayIso } from "@/utils/dateRange";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExerciseList">;
@@ -63,6 +63,40 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
       setUserId(folder?.userId ?? null);
     });
   }, [db, folderId]);
+
+  // 「この種目を完了」を押し忘れたまま実施中になっている種目は、ここでまとめて完了にできる
+  const finishWorkout = async () => {
+    if (!userId) return;
+    const logs = await listWorkoutLogsSince(db, userId, startOfTodayIso());
+    const pending = logs.filter((log) => !log.completed);
+
+    if (pending.length === 0) {
+      navigation.navigate("Summary", { userId });
+      return;
+    }
+
+    Alert.alert(
+      "実施中の種目があります",
+      `${pending.map((log) => log.exerciseName).join("、")} が実施中です(「この種目を完了」を押していません)。`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "そのまま終了",
+          onPress: () => navigation.navigate("Summary", { userId }),
+        },
+        {
+          text: "すべて完了にする",
+          onPress: async () => {
+            for (const log of pending) {
+              await markWorkoutLogCompleted(db, log.id);
+            }
+            await reloadToday();
+            navigation.navigate("Summary", { userId });
+          },
+        },
+      ]
+    );
+  };
 
   const confirmDelete = (exercise: Exercise) => {
     Alert.alert("種目を削除", `「${exercise.name}」を削除しますか?(全てのプログラムから削除されます)`, [
@@ -156,10 +190,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
             </Pressable>
 
             {userId && (
-              <Pressable
-                style={styles.finishRow}
-                onPress={() => navigation.navigate("Summary", { userId })}
-              >
+              <Pressable style={styles.finishRow} onPress={finishWorkout}>
                 <Text style={styles.finishText}>今日のトレーニングを終了</Text>
               </Pressable>
             )}
