@@ -89,13 +89,41 @@ export async function listWorkoutLogsByExercise(
   );
 }
 
+// beforeIso を渡すとその日時より前の記録に限定する。記録画面が「前回値」として
+// 今日の記録自身を拾わないために使う。
 export async function getLastWorkoutLog(
   db: SQLiteDatabase,
-  exerciseId: string
+  exerciseId: string,
+  beforeIso?: string
+): Promise<WorkoutLog | null> {
+  const row = beforeIso
+    ? await db.getFirstAsync<WorkoutLogRow>(
+        "SELECT * FROM workout_logs WHERE exercise_id = ? AND date < ? ORDER BY date DESC LIMIT 1;",
+        [exerciseId, beforeIso]
+      )
+    : await db.getFirstAsync<WorkoutLogRow>(
+        "SELECT * FROM workout_logs WHERE exercise_id = ? ORDER BY date DESC LIMIT 1;",
+        [exerciseId]
+      );
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    exerciseId: row.exercise_id,
+    date: row.date,
+    sets: await loadSets(db, row.id),
+  };
+}
+
+// その日すでに記録済みなら、その記録に追記する(1日1種目1レコード)。
+export async function getWorkoutLogSince(
+  db: SQLiteDatabase,
+  exerciseId: string,
+  sinceIso: string
 ): Promise<WorkoutLog | null> {
   const row = await db.getFirstAsync<WorkoutLogRow>(
-    "SELECT * FROM workout_logs WHERE exercise_id = ? ORDER BY date DESC LIMIT 1;",
-    [exerciseId]
+    "SELECT * FROM workout_logs WHERE exercise_id = ? AND date >= ? ORDER BY date DESC LIMIT 1;",
+    [exerciseId, sinceIso]
   );
   if (!row) return null;
 
@@ -105,6 +133,18 @@ export async function getLastWorkoutLog(
     date: row.date,
     sets: await loadSets(db, row.id),
   };
+}
+
+// セット数が増減するため、入れ替え方式で更新する。
+export async function replaceWorkoutLogSets(
+  db: SQLiteDatabase,
+  workoutLogId: string,
+  sets: SetLog[]
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM set_logs WHERE workout_log_id = ?;", [workoutLogId]);
+    await insertSets(db, workoutLogId, sets);
+  });
 }
 
 export async function createWorkoutLog(
@@ -121,24 +161,31 @@ export async function createWorkoutLog(
       exerciseId,
       date,
     ]);
-
-    for (let index = 0; index < sets.length; index += 1) {
-      const set = sets[index];
-      await db.runAsync(
-        `INSERT INTO set_logs (workout_log_id, order_index, weight, reps, time_sec, distance_km, rpe)
-         VALUES (?, ?, ?, ?, ?, ?, ?);`,
-        [
-          workoutLog.id,
-          index,
-          set.weight ?? null,
-          set.reps ?? null,
-          set.timeSec ?? null,
-          set.distanceKm ?? null,
-          set.rpe ?? null,
-        ]
-      );
-    }
+    await insertSets(db, workoutLog.id, sets);
   });
 
   return workoutLog;
+}
+
+async function insertSets(
+  db: SQLiteDatabase,
+  workoutLogId: string,
+  sets: SetLog[]
+): Promise<void> {
+  for (let index = 0; index < sets.length; index += 1) {
+    const set = sets[index];
+    await db.runAsync(
+      `INSERT INTO set_logs (workout_log_id, order_index, weight, reps, time_sec, distance_km, rpe)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        workoutLogId,
+        index,
+        set.weight ?? null,
+        set.reps ?? null,
+        set.timeSec ?? null,
+        set.distanceKm ?? null,
+        set.rpe ?? null,
+      ]
+    );
+  }
 }
