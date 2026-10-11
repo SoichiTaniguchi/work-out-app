@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, TextInput, StyleSheet, Alert, AppState } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  TextInput,
+  StyleSheet,
+  Alert,
+  AppState,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -188,7 +199,10 @@ export default function RecordScreen({ navigation, route }: Props) {
     : "前回の記録はありません";
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
@@ -204,7 +218,11 @@ export default function RecordScreen({ navigation, route }: Props) {
 
       <Text style={styles.lastRecord}>{lastSummary}</Text>
 
-      <View style={styles.sets}>
+      <ScrollView
+        style={styles.setsScroll}
+        contentContainerStyle={styles.sets}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.setHeaderRow}>
           <Text style={[styles.setHeaderCell, { width: 36 }]}>SET</Text>
           {fields.map((f) => (
@@ -257,7 +275,7 @@ export default function RecordScreen({ navigation, route }: Props) {
         <Pressable style={styles.addSetRow} onPress={addSet}>
           <Text style={styles.addSetText}>+ セット追加</Text>
         </Pressable>
-      </View>
+      </ScrollView>
 
       {restSeconds !== null && (
         <View style={styles.restBar}>
@@ -274,7 +292,7 @@ export default function RecordScreen({ navigation, route }: Props) {
       <Pressable style={styles.finishButton} onPress={handleFinish}>
         <Text style={styles.finishButtonText}>この種目を完了</Text>
       </Pressable>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -294,7 +312,8 @@ const styles = StyleSheet.create({
   back: { fontSize: 18, color: colors.textPrimary },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
   lastRecord: { padding: 14, paddingHorizontal: 20, backgroundColor: colors.surface, fontSize: 12, color: colors.textSecondary },
-  sets: { padding: 20, gap: 10, flex: 1 },
+  setsScroll: { flex: 1 },
+  sets: { padding: 20, gap: 10 },
   setHeaderRow: { flexDirection: "row", gap: 8 },
   setHeaderCell: { flex: 1, fontSize: 11, color: colors.textMuted },
   setRow: { flexDirection: "row", gap: 8, alignItems: "center" },
