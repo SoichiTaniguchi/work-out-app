@@ -7,7 +7,6 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { Exercise } from "@/types";
 import { createFolder, deleteFolder, getFolder, updateFolder } from "@/db/folders";
-import { listExercisesByUser } from "@/db/exercises";
 import { useFolderExercises } from "@/hooks/useFolderExercises";
 
 type Props = NativeStackScreenProps<RootStackParamList, "FolderEdit">;
@@ -74,11 +73,7 @@ export default function FolderEditScreen({ navigation, route }: Props) {
         </View>
 
         {currentFolderId ? (
-          <FolderExercisesSection
-            folderId={currentFolderId}
-            userId={userId}
-            navigation={navigation}
-          />
+          <FolderExercisesSection folderId={currentFolderId} navigation={navigation} />
         ) : (
           <Text style={styles.hint}>先にプログラム名を保存すると種目を追加できます</Text>
         )}
@@ -95,29 +90,17 @@ export default function FolderEditScreen({ navigation, route }: Props) {
 
 function FolderExercisesSection({
   folderId,
-  userId,
   navigation,
 }: {
   folderId: string;
-  userId: string;
   navigation: Props["navigation"];
 }) {
-  const { exercises, reload, reorder, removeFromFolder, addExisting } = useFolderExercises(folderId);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [candidates, setCandidates] = useState<Exercise[]>([]);
-  const db = useSQLiteContext();
+  const { exercises, reload, reorder, removeFromFolder } = useFolderExercises(folderId);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", reload);
     return unsubscribe;
   }, [navigation, reload]);
-
-  const openPicker = async () => {
-    const all = await listExercisesByUser(db, userId);
-    const attachedIds = new Set(exercises.map((e) => e.id));
-    setCandidates(all.filter((e) => !attachedIds.has(e.id)));
-    setPickerOpen(true);
-  };
 
   const renderItem = ({ item, drag, isActive }: RenderItemParams<Exercise>) => (
     <View style={[styles.exerciseRow, isActive && styles.exerciseRowActive]}>
@@ -143,34 +126,11 @@ function FolderExercisesSection({
         contentContainerStyle={{ gap: 10 }}
       />
 
-      {pickerOpen && (
-        <View style={styles.picker}>
-          {candidates.map((c) => (
-            <Pressable
-              key={c.id}
-              style={styles.pickerRow}
-              onPress={async () => {
-                await addExisting(c.id);
-                setCandidates((prev) => prev.filter((e) => e.id !== c.id));
-              }}
-            >
-              <Text style={styles.pickerRowText}>{c.name}</Text>
-              <Text style={styles.pickerRowAdd}>+ 追加</Text>
-            </Pressable>
-          ))}
-          <Pressable
-            style={styles.pickerRow}
-            onPress={() => navigation.navigate("ExerciseEdit", { folderId })}
-          >
-            <Text style={styles.pickerRowText}>+ 新規作成</Text>
-          </Pressable>
-        </View>
-      )}
-
-      <Pressable style={styles.addRow} onPress={() => (pickerOpen ? setPickerOpen(false) : openPicker())}>
-        <Text style={styles.addText}>
-          {pickerOpen ? "閉じる" : "+ 種目を追加(新規 or 既存から選択)"}
-        </Text>
+      <Pressable
+        style={styles.addRow}
+        onPress={() => navigation.navigate("ExercisePicker", { folderId })}
+      >
+        <Text style={styles.addText}>+ 種目を追加</Text>
       </Pressable>
     </View>
   );
@@ -217,23 +177,6 @@ const styles = StyleSheet.create({
   handle: { color: colors.textFaint },
   exerciseName: { flex: 1, fontSize: 14, color: colors.textPrimary },
   remove: { color: colors.textFaint },
-  picker: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    marginTop: 8,
-    overflow: "hidden",
-  },
-  pickerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 12,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-  },
-  pickerRowText: { fontSize: 14, color: colors.textPrimary },
-  pickerRowAdd: { fontSize: 12, color: colors.link, fontWeight: "600" },
   addRow: {
     alignItems: "center",
     justifyContent: "center",

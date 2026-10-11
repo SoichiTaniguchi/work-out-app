@@ -101,9 +101,9 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         ListFooterComponent={
           <Pressable
             style={styles.addRow}
-            onPress={() => navigation.navigate("ExerciseEdit", { folderId })}
+            onPress={() => navigation.navigate("ExercisePicker", { folderId })}
           >
-            <Text style={styles.addText}>+ 種目を追加(複製/テンプレートから選択も可)</Text>
+            <Text style={styles.addText}>+ 種目を追加</Text>
           </Pressable>
         }
       />

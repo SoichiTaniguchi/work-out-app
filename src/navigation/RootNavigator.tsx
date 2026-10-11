@@ -9,6 +9,7 @@ import RecordScreen from "@/screens/RecordScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import ExerciseEditScreen from "@/screens/ExerciseEditScreen";
+import ExercisePickerScreen from "@/screens/ExercisePickerScreen";
 import FolderEditScreen from "@/screens/FolderEditScreen";
 
 // 画面遷移図(仕様書)に対応するスタック定義
@@ -21,6 +22,7 @@ export type RootStackParamList = {
   History: { exerciseId: string };
   Settings: undefined;
   ExerciseEdit: { exerciseId?: string; duplicateFromId?: string; folderId?: string };
+  ExercisePicker: { folderId: string };
   FolderEdit: { folderId?: string; userId: string };
 };
 
@@ -37,6 +39,7 @@ export default function RootNavigator() {
       <Stack.Screen name="History" component={HistoryScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="ExerciseEdit" component={ExerciseEditScreen} options={{ presentation: "modal" }} />
+      <Stack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: "modal" }} />
       <Stack.Screen name="FolderEdit" component={FolderEditScreen} options={{ presentation: "modal" }} />
     </Stack.Navigator>
   );
