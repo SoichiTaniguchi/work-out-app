@@ -17,12 +17,18 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { Exercise, PersonalRecordType, RecordFieldType, SetLog, WorkoutLog } from "@/types";
 import { getExercise } from "@/db/exercises";
-import { getLastWorkoutLog, createWorkoutLog } from "@/db/logs";
+import {
+  getLastWorkoutLog,
+  getWorkoutLogSince,
+  createWorkoutLog,
+  replaceWorkoutLogSets,
+} from "@/db/logs";
 import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
 import { scheduleRestEndNotification, cancelRestEndNotification } from "@/timers/restTimer";
 import { FIELD_CONFIG, PR_LABELS } from "@/constants/recordFields";
 import { formatSetSummary, formatDate } from "@/utils/recordFormat";
+import { startOfTodayIso } from "@/utils/dateRange";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Record">;
 
@@ -32,6 +38,8 @@ const DEFAULT_SET_COUNT = 3;
 interface SetRowState {
   values: Partial<Record<RecordFieldType, string>>;
   done: boolean;
+  // 今日の記録から復元した行。空欄は「記録されていない項目」なので前回値で埋めない。
+  recorded?: boolean;
 }
 
 export default function RecordScreen({ navigation, route }: Props) {
@@ -40,6 +48,8 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [lastLog, setLastLog] = useState<WorkoutLog | null>(null);
+  // 今日すでに記録済みなら、そのレコードに追記する
+  const [todayLogId, setTodayLogId] = useState<string | null>(null);
   const [sets, setSets] = useState<SetRowState[]>([]);
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
 
@@ -49,14 +59,34 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     (async () => {
-      const ex = await getExercise(db, exerciseId);
-      const last = await getLastWorkoutLog(db, exerciseId);
+      const todayStart = startOfTodayIso();
+      const [ex, last, today] = await Promise.all([
+        getExercise(db, exerciseId),
+        getLastWorkoutLog(db, exerciseId, todayStart),
+        getWorkoutLogSince(db, exerciseId, todayStart),
+      ]);
+
       setExercise(ex);
       setLastLog(last);
-      const initialCount = last ? last.sets.length : DEFAULT_SET_COUNT;
-      setSets(
-        Array.from({ length: initialCount }, () => ({ values: {}, done: false }))
-      );
+      setTodayLogId(today?.id ?? null);
+
+      if (today) {
+        // 今日の分は完了済みセットとして復元し、続きを入力できるよう空行を1つ足す
+        const recorded: SetRowState[] = today.sets.map((set) => ({
+          values: Object.fromEntries(
+            (ex?.fieldDefinition ?? [])
+              .map((field) => [field, set[FIELD_CONFIG[field].key]] as const)
+              .filter(([, value]) => value !== undefined)
+              .map(([field, value]) => [field, String(value)])
+          ),
+          done: true,
+          recorded: true,
+        }));
+        setSets([...recorded, { values: {}, done: false }]);
+      } else {
+        const initialCount = last ? last.sets.length : DEFAULT_SET_COUNT;
+        setSets(Array.from({ length: initialCount }, () => ({ values: {}, done: false })));
+      }
     })();
   }, [db, exerciseId]);
 
@@ -158,7 +188,7 @@ export default function RecordScreen({ navigation, route }: Props) {
           if (raw !== undefined && raw.trim() !== "") {
             const parsed = Number(raw);
             value = Number.isNaN(parsed) ? undefined : parsed;
-          } else {
+          } else if (!row.recorded) {
             value = previousValue;
           }
           if (value !== undefined) {
@@ -176,7 +206,11 @@ export default function RecordScreen({ navigation, route }: Props) {
       return;
     }
 
-    await createWorkoutLog(db, exerciseId, new Date().toISOString(), resolvedSets);
+    if (todayLogId) {
+      await replaceWorkoutLogSets(db, todayLogId, resolvedSets);
+    } else {
+      await createWorkoutLog(db, exerciseId, new Date().toISOString(), resolvedSets);
+    }
     const newRecords = await evaluateAndSavePersonalRecords(db, exerciseId, resolvedSets);
 
     if (newRecords.length > 0) {
