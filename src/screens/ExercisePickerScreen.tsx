@@ -1,24 +1,38 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import { colors } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
-import type { Exercise } from "@/types";
+import type { Exercise, RecordFieldType } from "@/types";
 import {
   addExerciseToFolder,
   createExercise,
+  deleteExercise,
   listExercisesByFolder,
   listExercisesByUser,
 } from "@/db/exercises";
 import { getFolder } from "@/db/folders";
 import { FIELD_CONFIG } from "@/constants/recordFields";
-import { PRESET_GROUPS, type PresetExercise } from "@/constants/presetExercises";
+import { BODY_PARTS, PRESET_GROUPS, type PresetExercise } from "@/constants/presetExercises";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExercisePicker">;
 
-function fieldSummary(preset: PresetExercise): string {
-  return preset.fieldDefinition.map((f) => FIELD_CONFIG[f].label).join(" × ");
+const OTHER = "その他";
+
+interface Row {
+  key: string;
+  name: string;
+  equipment: string;
+  fieldDefinition: RecordFieldType[];
+  // 自分の種目は削除でき、プリセットは選ぶと新規作成される
+  own: Exercise | null;
+  preset: PresetExercise | null;
+  inFolder: boolean;
+}
+
+function fieldSummary(fields: RecordFieldType[]): string {
+  return fields.map((f) => FIELD_CONFIG[f].label).join(" × ");
 }
 
 export default function ExercisePickerScreen({ navigation, route }: Props) {
@@ -28,6 +42,7 @@ export default function ExercisePickerScreen({ navigation, route }: Props) {
   const [userId, setUserId] = useState<string | null>(null);
   const [attached, setAttached] = useState<Exercise[]>([]);
   const [ownExercises, setOwnExercises] = useState<Exercise[]>([]);
+  const [selectedPart, setSelectedPart] = useState(BODY_PARTS[0]);
 
   const reload = useCallback(async () => {
     const folder = await getFolder(db, folderId);
@@ -50,8 +65,46 @@ export default function ExercisePickerScreen({ navigation, route }: Props) {
     return unsubscribe;
   }, [navigation, reload]);
 
-  const attachedNames = new Set(attached.map((e) => e.name));
-  const candidates = ownExercises.filter((e) => !attached.some((a) => a.id === e.id));
+  // プリセットの9部位に当てはまらない(部位未設定を含む)自分の種目は「その他」に寄せる
+  const hasOther = ownExercises.some(
+    (e) => !e.bodyParts.some((part) => BODY_PARTS.includes(part))
+  );
+  const parts = hasOther ? [...BODY_PARTS, OTHER] : BODY_PARTS;
+
+  const ownForPart = ownExercises.filter((e) =>
+    selectedPart === OTHER
+      ? !e.bodyParts.some((part) => BODY_PARTS.includes(part))
+      : e.bodyParts.includes(selectedPart)
+  );
+  const presetsForPart =
+    PRESET_GROUPS.find((g) => g.bodyPart === selectedPart)?.exercises ?? [];
+
+  const attachedIds = new Set(attached.map((e) => e.id));
+  const ownNames = new Set(ownExercises.map((e) => e.name));
+
+  const rows: Row[] = [
+    ...ownForPart.map((exercise) => ({
+      key: exercise.id,
+      name: exercise.name,
+      equipment: exercise.equipment,
+      fieldDefinition: exercise.fieldDefinition,
+      own: exercise,
+      preset: null,
+      inFolder: attachedIds.has(exercise.id),
+    })),
+    // 同名の自分の種目が既にある場合はプリセット側を出さない(二重に見えるのを避ける)
+    ...presetsForPart
+      .filter((preset) => !ownNames.has(preset.name))
+      .map((preset) => ({
+        key: `preset:${preset.name}`,
+        name: preset.name,
+        equipment: preset.equipment,
+        fieldDefinition: preset.fieldDefinition,
+        own: null,
+        preset,
+        inFolder: false,
+      })),
+  ];
 
   const addExisting = async (exerciseId: string) => {
     await addExerciseToFolder(db, folderId, exerciseId);
@@ -74,6 +127,24 @@ export default function ExercisePickerScreen({ navigation, route }: Props) {
     await reload();
   };
 
+  const confirmDelete = (exercise: Exercise) => {
+    Alert.alert(
+      "種目を削除",
+      `「${exercise.name}」を削除しますか?(全てのプログラムと記録から削除されます)`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除",
+          style: "destructive",
+          onPress: async () => {
+            await deleteExercise(db, exercise.id);
+            await reload();
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -84,66 +155,64 @@ export default function ExercisePickerScreen({ navigation, route }: Props) {
         <View style={{ width: 18 }} />
       </View>
 
+      <View style={styles.partRow}>
+        {parts.map((part) => {
+          const selected = part === selectedPart;
+          return (
+            <Pressable
+              key={part}
+              style={[styles.pill, selected && styles.pillSelected]}
+              onPress={() => setSelectedPart(part)}
+            >
+              <Text style={[styles.pillText, selected && styles.pillTextSelected]}>{part}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <ScrollView contentContainerStyle={styles.content}>
+        {rows.map((row) => (
+          <View key={row.key} style={[styles.row, row.inFolder && styles.rowDisabled]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowName, row.inFolder && styles.rowNameDisabled]}>
+                {row.name}
+                {row.own && <Text style={styles.ownBadge}> 自分の種目</Text>}
+              </Text>
+              <Text style={styles.rowMeta}>
+                {row.equipment} · {fieldSummary(row.fieldDefinition)}
+              </Text>
+            </View>
+
+            {row.own && (
+              <Pressable hitSlop={8} onPress={() => confirmDelete(row.own!)}>
+                <Text style={styles.deleteIcon}>🗑</Text>
+              </Pressable>
+            )}
+
+            {row.inFolder ? (
+              <Text style={styles.rowAdded}>追加済み</Text>
+            ) : (
+              <Pressable
+                hitSlop={8}
+                onPress={() => (row.own ? addExisting(row.own.id) : addPreset(row.preset!))}
+              >
+                <Text style={styles.rowAdd}>+ 追加</Text>
+              </Pressable>
+            )}
+          </View>
+        ))}
+
         <Pressable
           style={styles.manualRow}
-          onPress={() => navigation.navigate("ExerciseEdit", { folderId })}
+          onPress={() =>
+            navigation.navigate("ExerciseEdit", {
+              folderId,
+              initialBodyPart: selectedPart === OTHER ? undefined : selectedPart,
+            })
+          }
         >
           <Text style={styles.manualText}>+ 自分で入力して作成</Text>
         </Pressable>
-
-        {candidates.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>自分の種目から選ぶ</Text>
-            {candidates.map((exercise) => (
-              <Pressable
-                key={exercise.id}
-                style={styles.row}
-                onPress={() => addExisting(exercise.id)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowName}>{exercise.name}</Text>
-                  <Text style={styles.rowMeta}>
-                    {exercise.fieldDefinition.map((f) => FIELD_CONFIG[f].label).join(" × ")}
-                  </Text>
-                </View>
-                <Text style={styles.rowAdd}>+ 追加</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>プリセットから追加</Text>
-          {PRESET_GROUPS.map((group) => (
-            <View key={group.bodyPart} style={styles.group}>
-              <Text style={styles.groupTitle}>{group.bodyPart}</Text>
-              {group.exercises.map((preset) => {
-                const alreadyAdded = attachedNames.has(preset.name);
-                return (
-                  <Pressable
-                    key={preset.name}
-                    style={[styles.row, alreadyAdded && styles.rowDisabled]}
-                    disabled={alreadyAdded}
-                    onPress={() => addPreset(preset)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowName, alreadyAdded && styles.rowNameDisabled]}>
-                        {preset.name}
-                      </Text>
-                      <Text style={styles.rowMeta}>
-                        {preset.equipment} · {fieldSummary(preset)}
-                      </Text>
-                    </View>
-                    <Text style={alreadyAdded ? styles.rowAdded : styles.rowAdd}>
-                      {alreadyAdded ? "追加済み" : "+ 追加"}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ))}
-        </View>
       </ScrollView>
     </View>
   );
@@ -162,25 +231,29 @@ const styles = StyleSheet.create({
   },
   close: { fontSize: 18, color: colors.textPrimary },
   title: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
-  content: { padding: 20, gap: 20, paddingBottom: 40 },
-  manualRow: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 14,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: colors.textFaint,
-    borderRadius: 10,
+  partRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    padding: 20,
+    paddingBottom: 12,
   },
-  manualText: { color: colors.link, fontSize: 14, fontWeight: "600" },
-  section: { gap: 8 },
-  sectionTitle: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
-  group: { gap: 6, marginTop: 4 },
-  groupTitle: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
+  pill: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pillSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  pillText: { fontSize: 13, color: colors.textSecondary },
+  pillTextSelected: { color: "#fff", fontWeight: "600" },
+  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 8 },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 10,
@@ -190,7 +263,20 @@ const styles = StyleSheet.create({
   rowDisabled: { backgroundColor: colors.surface, borderColor: colors.surface },
   rowName: { fontSize: 14, color: colors.textPrimary },
   rowNameDisabled: { color: colors.textFaint },
+  ownBadge: { fontSize: 10, color: colors.textFaint },
   rowMeta: { fontSize: 11, color: colors.textFaint, marginTop: 2 },
   rowAdd: { fontSize: 12, color: colors.link, fontWeight: "600" },
   rowAdded: { fontSize: 12, color: colors.textFaint },
+  deleteIcon: { fontSize: 14, color: colors.textMuted },
+  manualRow: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    marginTop: 8,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.textFaint,
+    borderRadius: 10,
+  },
+  manualText: { color: colors.link, fontSize: 14, fontWeight: "600" },
 });
