@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Alert } from "react-native";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 import { useSQLiteContext } from "expo-sqlite";
@@ -8,6 +8,8 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { Exercise } from "@/types";
 import { useFolderExercises } from "@/hooks/useFolderExercises";
 import { getFolder } from "@/db/folders";
+import { listWorkoutLogsSince } from "@/db/logs";
+import { startOfTodayIso } from "@/utils/dateRange";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExerciseList">;
 
@@ -24,12 +26,30 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
   const db = useSQLiteContext();
   const [folderName, setFolderName] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
+  const [todaySetCounts, setTodaySetCounts] = useState<Record<string, number>>({});
   const { exercises, reload, reorder, deletePermanently } = useFolderExercises(folderId);
 
+  const reloadToday = useCallback(async () => {
+    if (!userId) return;
+    const logs = await listWorkoutLogsSince(db, userId, startOfTodayIso());
+    const counts: Record<string, number> = {};
+    for (const log of logs) {
+      counts[log.exerciseId] = (counts[log.exerciseId] ?? 0) + log.sets.length;
+    }
+    setTodaySetCounts(counts);
+  }, [db, userId]);
+
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", reload);
+    reloadToday();
+  }, [reloadToday]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      reload();
+      reloadToday();
+    });
     return unsubscribe;
-  }, [navigation, reload]);
+  }, [navigation, reload, reloadToday]);
 
   useEffect(() => {
     getFolder(db, folderId).then((folder) => {
@@ -45,23 +65,30 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
     ]);
   };
 
-  const renderItem = ({ item, drag, isActive }: RenderItemParams<Exercise>) => (
+  const renderItem = ({ item, drag, isActive }: RenderItemParams<Exercise>) => {
+    const todaySets = todaySetCounts[item.id] ?? 0;
+    return (
     <Pressable
-      style={[styles.row, isActive && styles.rowActive]}
+      style={[styles.row, isActive && styles.rowActive, todaySets > 0 && styles.rowDone]}
       onPress={() => navigation.navigate("Record", { exerciseId: item.id })}
     >
       <Pressable onPressIn={drag} hitSlop={8}>
         <Text style={styles.handle}>≡</Text>
       </Pressable>
       <View style={{ flex: 1 }}>
-        <Text style={styles.exerciseName}>{item.name}</Text>
+        <Text style={styles.exerciseName}>
+          {todaySets > 0 && <Text style={styles.doneMark}>✓ </Text>}
+          {item.name}
+        </Text>
         <View style={styles.tags}>
           {[...item.bodyParts, item.equipment].filter(Boolean).map((t) => (
             <Text key={t} style={styles.tag}>{t}</Text>
           ))}
         </View>
-        <Text style={styles.last}>
-          記録項目: {item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}
+        <Text style={[styles.last, todaySets > 0 && styles.lastDone]}>
+          {todaySets > 0
+            ? `今日 ${todaySets}セット記録済み(タップで追加)`
+            : `記録項目: ${item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}`}
         </Text>
       </View>
       <Pressable
@@ -82,7 +109,8 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         <Text style={styles.iconText}>🗑</Text>
       </Pressable>
     </Pressable>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -149,6 +177,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   rowActive: { borderColor: colors.borderStrong },
+  rowDone: { borderColor: colors.success, backgroundColor: colors.surface },
+  doneMark: { color: colors.success, fontWeight: "700" },
   handle: { color: colors.textFaint, width: 16 },
   exerciseName: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
@@ -162,6 +192,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   last: { fontSize: 11, color: colors.textFaint, marginTop: 4 },
+  lastDone: { color: colors.success },
   iconButton: { paddingHorizontal: 4 },
   iconText: { fontSize: 16, color: colors.textMuted },
   empty: { textAlign: "center", color: colors.textFaint, fontSize: 13, paddingVertical: 20 },
