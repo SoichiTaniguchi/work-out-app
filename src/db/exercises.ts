@@ -47,6 +47,26 @@ export async function listExercisesByUser(
   return rows.map(rowToExercise);
 }
 
+// ユーザーの種目に実際に設定されている部位(プリセット9部位に無いユーザー独自の部位も含む)。
+// 部位マスタのテーブルは持たず、使われている部位がそのまま選択肢になる。
+export async function listUsedBodyParts(
+  db: SQLiteDatabase,
+  userId: string
+): Promise<string[]> {
+  const rows = await db.getAllAsync<{ body_parts: string }>(
+    "SELECT body_parts FROM exercises WHERE user_id = ?;",
+    [userId]
+  );
+
+  const parts = new Set<string>();
+  for (const row of rows) {
+    for (const part of JSON.parse(row.body_parts) as string[]) {
+      if (part) parts.add(part);
+    }
+  }
+  return [...parts];
+}
+
 export async function getExercise(db: SQLiteDatabase, id: string): Promise<Exercise | null> {
   const row = await db.getFirstAsync<ExerciseRow>("SELECT * FROM exercises WHERE id = ?;", [id]);
   return row ? rowToExercise(row) : null;
