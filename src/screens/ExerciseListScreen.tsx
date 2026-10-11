@@ -77,15 +77,11 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
 
     Alert.alert(
       "実施中の種目があります",
-      `${pending.map((log) => log.exerciseName).join("、")} が実施中です(「この種目を完了」を押していません)。`,
+      `${pending.map((log) => log.exerciseName).join("、")} を完了にして終了しますか?`,
       [
         { text: "キャンセル", style: "cancel" },
         {
-          text: "そのまま終了",
-          onPress: () => navigation.navigate("Summary", { userId }),
-        },
-        {
-          text: "すべて完了にする",
+          text: "完了にして終了",
           onPress: async () => {
             for (const log of pending) {
               await markWorkoutLogCompleted(db, log.id);
