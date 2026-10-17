@@ -18,9 +18,9 @@ export async function getWorkoutStatsSince(
             SUM(CASE WHEN sl.weight IS NOT NULL AND sl.reps IS NOT NULL
                      THEN sl.weight * sl.reps ELSE 0 END) as volume
      FROM workout_logs wl
-     INNER JOIN exercises e ON e.id = wl.exercise_id
+     INNER JOIN exercises e ON e.id = wl.exercise_id AND e.deleted_at IS NULL
      LEFT JOIN set_logs sl ON sl.workout_log_id = wl.id
-     WHERE e.user_id = ? AND wl.date >= ?;`,
+     WHERE e.user_id = ? AND wl.date >= ? AND wl.deleted_at IS NULL;`,
     [userId, sinceIso]
   );
 
@@ -41,8 +41,8 @@ export async function getLatestPersonalRecord(
   return db.getFirstAsync<LatestPersonalRecord>(
     `SELECT e.name as exerciseName, pr.type as type, pr.value as value, pr.achieved_at as achievedAt
      FROM personal_records pr
-     INNER JOIN exercises e ON e.id = pr.exercise_id
-     WHERE e.user_id = ?
+     INNER JOIN exercises e ON e.id = pr.exercise_id AND e.deleted_at IS NULL
+     WHERE e.user_id = ? AND pr.deleted_at IS NULL
      ORDER BY pr.achieved_at DESC
      LIMIT 1;`,
     [userId]

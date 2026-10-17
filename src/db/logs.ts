@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import type { RecordFieldType, SetLog, WorkoutLog } from "@/types";
 import { generateId } from "@/db/id";
+import { nowIso } from "@/db/timestamps";
 
 interface WorkoutLogRow {
   id: string;
@@ -63,8 +64,8 @@ export async function listWorkoutLogsSince(
   >(
     `SELECT wl.*, e.name as exercise_name, e.field_definition as field_definition
      FROM workout_logs wl
-     INNER JOIN exercises e ON e.id = wl.exercise_id
-     WHERE e.user_id = ? AND wl.date >= ?
+     INNER JOIN exercises e ON e.id = wl.exercise_id AND e.deleted_at IS NULL
+     WHERE e.user_id = ? AND wl.date >= ? AND wl.deleted_at IS NULL
      ORDER BY wl.date ASC;`,
     [userId, sinceIso]
   );
@@ -83,7 +84,7 @@ export async function listWorkoutLogsByExercise(
   exerciseId: string
 ): Promise<WorkoutLog[]> {
   const rows = await db.getAllAsync<WorkoutLogRow>(
-    "SELECT * FROM workout_logs WHERE exercise_id = ? ORDER BY date ASC;",
+    "SELECT * FROM workout_logs WHERE exercise_id = ? AND deleted_at IS NULL ORDER BY date ASC;",
     [exerciseId]
   );
 
@@ -99,11 +100,15 @@ export async function getLastWorkoutLog(
 ): Promise<WorkoutLog | null> {
   const row = beforeIso
     ? await db.getFirstAsync<WorkoutLogRow>(
-        "SELECT * FROM workout_logs WHERE exercise_id = ? AND date < ? ORDER BY date DESC LIMIT 1;",
+        `SELECT * FROM workout_logs
+         WHERE exercise_id = ? AND date < ? AND deleted_at IS NULL
+         ORDER BY date DESC LIMIT 1;`,
         [exerciseId, beforeIso]
       )
     : await db.getFirstAsync<WorkoutLogRow>(
-        "SELECT * FROM workout_logs WHERE exercise_id = ? ORDER BY date DESC LIMIT 1;",
+        `SELECT * FROM workout_logs
+         WHERE exercise_id = ? AND deleted_at IS NULL
+         ORDER BY date DESC LIMIT 1;`,
         [exerciseId]
       );
   return row ? rowToWorkoutLog(db, row) : null;
@@ -116,7 +121,9 @@ export async function getWorkoutLogSince(
   sinceIso: string
 ): Promise<WorkoutLog | null> {
   const row = await db.getFirstAsync<WorkoutLogRow>(
-    "SELECT * FROM workout_logs WHERE exercise_id = ? AND date >= ? ORDER BY date DESC LIMIT 1;",
+    `SELECT * FROM workout_logs
+     WHERE exercise_id = ? AND date >= ? AND deleted_at IS NULL
+     ORDER BY date DESC LIMIT 1;`,
     [exerciseId, sinceIso]
   );
   return row ? rowToWorkoutLog(db, row) : null;
@@ -127,7 +134,10 @@ export async function markWorkoutLogCompleted(
   db: SQLiteDatabase,
   workoutLogId: string
 ): Promise<void> {
-  await db.runAsync("UPDATE workout_logs SET completed = 1 WHERE id = ?;", [workoutLogId]);
+  await db.runAsync("UPDATE workout_logs SET completed = 1, updated_at = ? WHERE id = ?;", [
+    nowIso(),
+    workoutLogId,
+  ]);
 }
 
 // セット数が増減するため、入れ替え方式で更新する。
@@ -139,6 +149,11 @@ export async function replaceWorkoutLogSets(
   await db.withTransactionAsync(async () => {
     await db.runAsync("DELETE FROM set_logs WHERE workout_log_id = ?;", [workoutLogId]);
     await insertSets(db, workoutLogId, sets);
+    // セットは記録の集約の一部なので、記録そのものが更新されたものとして扱う
+    await db.runAsync("UPDATE workout_logs SET updated_at = ? WHERE id = ?;", [
+      nowIso(),
+      workoutLogId,
+    ]);
   });
 }
 
@@ -157,11 +172,10 @@ export async function createWorkoutLog(
   };
 
   await db.withTransactionAsync(async () => {
-    await db.runAsync("INSERT INTO workout_logs (id, exercise_id, date) VALUES (?, ?, ?);", [
-      workoutLog.id,
-      exerciseId,
-      date,
-    ]);
+    await db.runAsync(
+      "INSERT INTO workout_logs (id, exercise_id, date, updated_at) VALUES (?, ?, ?, ?);",
+      [workoutLog.id, exerciseId, date, nowIso()]
+    );
     await insertSets(db, workoutLog.id, sets);
   });
 
