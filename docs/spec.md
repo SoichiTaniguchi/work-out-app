@@ -225,13 +225,31 @@ flowchart LR
 
 | テーブル | 主なカラム |
 | --- | --- |
-| users | id, 名前 |
-| folders | id, user_id, 名前, 並び順 |
-| exercises | id, user_id, folder_id, 種目名, 部位, 器具, 記録項目定義(JSON) |
-| logs | id, exercise_id, 日付, セット番号, 重量, 回数, 時間, 距離, RPEなど(可変項目) |
-| personal_records | id, exercise_id, 種別(最高重量/最高回数/ボリューム), 値, 達成日 |
+| users | id, 名前, updated_at, deleted_at |
+| folders | id, user_id, 名前, 並び順, updated_at, deleted_at |
+| exercises | id, user_id, 種目名, 部位, 器具, 記録項目定義(JSON), updated_at, deleted_at |
+| folder_exercises | folder_id, exercise_id, 並び順(複合主キー) |
+| logs | id, exercise_id, 日付, 完了フラグ, updated_at, deleted_at |
+| set_logs | workout_log_id, セット番号, 重量, 回数, 時間, 距離, RPE(可変項目) |
+| personal_records | id, exercise_id, 種別(最高重量/最高回数/ボリューム), 値, 達成日, updated_at, deleted_at |
 
 ※exercises.記録項目定義をJSONで持つことで、種目ごとの記録項目カスタマイズに柔軟に対応する想定。
+
+※1つの種目を複数のフォルダ/プログラムに入れられるよう、所属は`folder_exercises`の多対多で持つ
+(exercisesにfolder_idは持たせない)。
+
+### 同期のための更新日時・論理削除
+
+Last Write Winsで差分同期するため、同期の単位になるテーブル(users / folders / exercises /
+logs / personal_records)は`updated_at`(更新日時)と`deleted_at`(論理削除日時)を持つ。
+
+- 削除は物理削除せず`deleted_at`を打つ。物理削除では「削除された」ことを相手に伝えられず、
+  同期時に削除済みデータが復活してしまうため
+- 読み出しは常に`deleted_at IS NULL`で絞る
+- `folder_exercises`と`set_logs`はidを持たず、それぞれフォルダ・記録の集約の一部として扱う。
+  単独では同期せず物理削除のままとし、変更時は親の`updated_at`を更新する
+- 論理削除では外部キーの`ON DELETE CASCADE`が発火しないため、削除の伝播
+  (ユーザー → フォルダ・種目 → 記録・自己ベスト)はアプリ側で明示的に行う
 
 ## 今後決めること・オープン課題
 

@@ -134,6 +134,8 @@ src/
       手動同期の行はNAS連携の実装時に追加する
 - [x] 完了サマリー画面(種目一覧の「今日のトレーニングを終了」から、その日の種目数・
       セット数・負荷量・更新した自己ベスト・種目別の記録を表示)
+- [x] NAS同期の土台(全テーブルの`updated_at`・論理削除`deleted_at`、削除の伝播と
+      読み出しフィルタ)。画面の見た目・操作は変わらない
 - [ ] NAS上のAPIサーバーとのHTTP通信・オフライン差分同期
 - [ ] `src/native/RestTimerActivity.ts` はJS側インターフェースのみ。実際に
       Dynamic Islandへ表示するには、Swiftで書いたLive Activities
