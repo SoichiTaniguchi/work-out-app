@@ -8,7 +8,7 @@ const SEED_USERS = [
   { id: "u3", name: "お母さん" },
 ];
 
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -110,5 +110,31 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       await db.execAsync("PRAGMA user_version = 3;");
     });
     currentVersion = 3;
+  }
+
+  if (currentVersion < 4) {
+    await db.withTransactionAsync(async () => {
+      // NAS同期の土台。updated_at でLast Write Winsを判定し、削除は deleted_at による
+      // 論理削除にして「削除された」ことをサーバーへ伝えられるようにする。
+      // ALTER TABLE のデフォルトには非定数を書けないので、空文字で追加してから現在時刻で埋める。
+      for (const table of [
+        "users",
+        "folders",
+        "exercises",
+        "workout_logs",
+        "personal_records",
+      ]) {
+        await db.execAsync(
+          `ALTER TABLE ${table} ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+           ALTER TABLE ${table} ADD COLUMN deleted_at TEXT;`
+        );
+        await db.runAsync(`UPDATE ${table} SET updated_at = ? WHERE updated_at = '';`, [
+          new Date().toISOString(),
+        ]);
+      }
+
+      await db.execAsync("PRAGMA user_version = 4;");
+    });
+    currentVersion = 4;
   }
 }
