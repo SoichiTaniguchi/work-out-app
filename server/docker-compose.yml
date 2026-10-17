@@ -1,0 +1,29 @@
+services:
+  server:
+    build: .
+    image: work-out-app-server
+    container_name: work-out-app-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_PATH: /data/work-out-app.db
+      # LAN/VPN内でのみ使う前提なので既定は認証なし。
+      # 設定するとアプリ側も同じ値を Authorization: Bearer で送る必要がある。
+      SYNC_TOKEN: ${SYNC_TOKEN:-}
+    volumes:
+      # NAS上のフォルダにDBファイルを置く(Hyper Backupの対象にできる)
+      - ./data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
