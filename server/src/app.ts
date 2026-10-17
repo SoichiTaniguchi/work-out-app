@@ -1,5 +1,7 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import type { Database } from "better-sqlite3";
+import { createSyncRouter } from "./routes/sync.js";
+import { createUsersRouter } from "./routes/users.js";
 
 export interface AppOptions {
   db: Database;
@@ -20,6 +22,9 @@ export function createApp({ db, syncToken }: AppOptions): Express {
   if (syncToken) {
     app.use(requireBearerToken(syncToken));
   }
+
+  app.use(createUsersRouter(db));
+  app.use(createSyncRouter(db));
 
   app.use(handleJsonParseError);
 
