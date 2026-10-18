@@ -14,6 +14,7 @@ import {
 } from "@/db/stats";
 import { PR_LABELS } from "@/constants/recordFields";
 import { startOfWeekIso } from "@/utils/dateRange";
+import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
@@ -52,6 +53,18 @@ export default function HomeScreen({ navigation, route }: Props) {
     const unsubscribe = navigation.addListener("focus", reload);
     return unsubscribe;
   }, [navigation, reload]);
+
+  // 起動してユーザーを選んだ直後に一度だけ自動同期する(仕様書「アプリ起動時に自動同期」)。
+  // 画面に戻るたびには走らせない。失敗しても黙って次の機会に回す。
+  useEffect(() => {
+    let cancelled = false;
+    runSyncQuietly(db, userId).then(() => {
+      if (!cancelled) reload();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [db, userId, reload]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

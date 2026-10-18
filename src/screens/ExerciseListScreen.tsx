@@ -10,6 +10,7 @@ import { useFolderExercises } from "@/hooks/useFolderExercises";
 import { getFolder } from "@/db/folders";
 import { listWorkoutLogsSince, markWorkoutLogCompleted } from "@/db/logs";
 import { startOfTodayIso } from "@/utils/dateRange";
+import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExerciseList">;
 
@@ -72,6 +73,8 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
 
     if (pending.length === 0) {
       navigation.navigate("Summary", { userId });
+      // サマリーはローカルを見るので待たない。帰宅前にNASへ反映しておくための同期。
+      void runSyncQuietly(db, userId);
       return;
     }
 
@@ -88,6 +91,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
             }
             await reloadToday();
             navigation.navigate("Summary", { userId });
+            void runSyncQuietly(db, userId);
           },
         },
       ]
