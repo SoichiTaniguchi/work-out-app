@@ -148,12 +148,46 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
       または `expo prebuild` で生成されるiOSプロジェクトに組み込む必要があります。
 - [ ] デザイン調整(文字サイズなど)— 機能が一通り揃ってから着手する方針
 
-## 次のステップ(候補)
+## 次にやること
 
-1. 設定画面のNAS接続先の入力を書きやすくする(現状は素のテキスト入力で、URLを手打ちするのが
-   つらい。履歴からの選択、`http://`の補完、QRコード読み取りなどを検討)
-2. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
-3. デザイン調整(文字サイズなど)
+[Issues](https://github.com/SoichiTaniguchi/work-out-app/issues) で管理している。
+READMEには残さない(二重管理になり、片方が必ず古くなるため)。
+
+## 開発の進め方
+
+使っていて気づいたことをIssueに溜めて、ある程度たまったらまとめて直す。
+
+1. **気づいたらIssueを立てる** — スマホのGitHubアプリからでよい。1〜2行で十分
+   (テンプレートは`.github/ISSUE_TEMPLATE/`)
+2. **着手するときはブランチを切る** — `feature/<内容>` または `fix/<内容>`
+3. **Pull Requestを出す** — mainへ直接pushしない。差分をGitHubで確認してからマージする
+4. **CIが自動で走る** — アプリの型チェックと、サーバーのテスト12件
+5. **マージするとNASへ自動デプロイ** — 下の「自動デプロイ」を参照
+
+コミットメッセージはConventional Commits(`feat:` `fix:` `docs:` `refactor:` `test:`)。
+Issueに紐づくものは`(#12)`を付け、最後のコミットに`Closes #12`と書くとマージ時に自動で閉じる。
+
+### 自動デプロイ
+
+mainが更新されると、NAS上のアプリとサーバーが自動で入れ替わる。
+アプリはExpo Goが起動のたびにMetroからコードを取りに行くので、**次にアプリを開いた時点で新しくなる**。
+
+```
+PRをマージ
+  → CI(クラウド): 型チェック・テスト
+  → 成功したら Deploy to NAS(NAS上のself-hosted runner)
+      1. scripts/deploy-nas.sh がコードを /volume1/docker/work-out-app に配置
+      2. package-lock.json が変わっていれば npm ci
+      3. Metroコンテナを再起動
+      4. 同期サーバーを docker compose up -d --build
+      5. /health と /status で起動を確認
+```
+
+CIが失敗した場合はデプロイしない。手元で直接動かすこともできる:
+
+```bash
+sudo bash scripts/deploy-nas.sh /path/to/checkout
+```
 
 ## NAS同期
 
