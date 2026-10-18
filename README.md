@@ -194,6 +194,101 @@ iOSでLAN内のサーバーに繋ぐには「ローカルネットワーク」�
 既に許可を取っているためそのまま動くが、将来Dev Client / EAS Buildで自前のアプリにする場合は
 `app.json`に`NSLocalNetworkUsageDescription`と、HTTP(非HTTPS)を使うためのATS設定が必要になる。
 
+## PCなしでアプリを使う(NAS上のMetro + Expo Go)
+
+Expo GoはMetro(開発サーバー)が無いと動かないため、普段使いするにはPCを起動しておく必要がある。
+これを避けるため、**MetroをNASのDockerで常駐させ、iPhoneからTailscale経由で繋いでいる**。
+PCは不要で、外出先からも使える。
+
+有料のApple Developer Program($99/年)を払わずに済ませるための構成で、代わりに
+ホーム画面アイコンは作れず、起動はExpo Goからになる。他の選択肢との比較は
+「アプリとして配布する」を参照。
+
+### 起動手順
+
+コードを更新したときも同じ手順で入れ替える(`CI=1`のためファイル変更の自動反映はない)。
+
+```powershell
+# 1. PC: Git管理下のファイルだけを固めて転送
+cd C:\Users\astro\Develop\work-out-app
+git archive --format=tar -o $env:TEMP\work-out-app-full.tar HEAD
+scp -O $env:TEMP\work-out-app-full.tar HomeProtector@192.168.0.20:/volume1/docker/
+```
+
+```bash
+# 2. NAS: 展開
+cd /volume1/docker
+tar -xf work-out-app-full.tar -C work-out-app && rm work-out-app-full.tar
+cd work-out-app
+
+# 3. 依存パッケージ(package-lock.jsonが変わったときだけ。10分ほどかかる)
+sudo docker run --rm -v "$(pwd)":/app -w /app \
+  -u $(id -u):$(id -g) --group-add 101 \
+  -e HOME=/app/.container-home \
+  node:20-bookworm-slim npm ci
+
+# 4. Metroを常駐させる
+sudo docker rm -f workout-metro 2>/dev/null
+sudo docker run -dit --name workout-metro --network host --restart unless-stopped \
+  -v "$(pwd)":/app -w /app \
+  -u $(id -u):$(id -g) --group-add 101 \
+  -e HOME=/tmp \
+  -e CI=1 \
+  -e REACT_NATIVE_PACKAGER_HOSTNAME=100.98.40.63 \
+  node:20-bookworm-slim npx expo start --go --max-workers 1
+
+sudo docker logs -f workout-metro    # Waiting on http://localhost:8081 が出れば成功
+```
+
+iPhoneのExpo Goで「Enter URL manually」に `exp://100.98.40.63:8081` を入力する。
+一度開けば履歴に残るので、以降はタップするだけ。Tailscaleはオンにしておくこと。
+
+### 引数と環境変数の理由
+
+| 指定 | 理由 |
+| --- | --- |
+| `--network host` | Tailscaleのインターフェース(`100.x.y.z`)でも8081番を受けるため |
+| `REACT_NATIVE_PACKAGER_HOSTNAME` | これが無いとExpo GoがNASのLAN側アドレスを見に行き、外出先から繋がらない |
+| `CI=1` | 付けないとExpo CLIが「ログインしますか」の対話プロンプトを出し、バックグラウンドのコンテナでは延々ループする。代償としてwatchが無効になる |
+| `HOME=/tmp` | `~/.expo`への書き込みがNAS共有フォルダのACLと相性が悪く、renameがENOENTで失敗する。コンテナ内部に逃がす |
+| `--group-add 101` | DSMのACL対策(`server/README.md`と同じ理由) |
+| `--max-workers 1` | NASのメモリが1.7GBしかないため。既定ではコア数(4)だけワーカーが立ち、メモリ不足になる |
+
+### つまずきどころ
+
+- **Expo Goで「not signed in to Expo CLI」と出る** — iPhoneのExpo Goがログイン済みなのに、NAS側のCLIが匿名のため。Expo Goからログアウトすれば解決する。アカウントを保ちたい場合は
+  [アクセストークン](https://expo.dev/settings/access-tokens)を作り、`-e EXPO_TOKEN=...` をコンテナに渡す
+- **`Cannot find module '.../ws/index.js'`** — `npm install`が途中で失敗して`node_modules`が不完全。`npm ci`で作り直す
+- **npmが`/.npm`に書けないと言う** — コンテナ内にそのuidのホームが無いため。`HOME`を書き込める場所に指定する
+
+### 実測値(DS423+ / メモリ1.7GB / 4コア)
+
+| 処理 | 時間 |
+| --- | --- |
+| `npm ci` | 3分 |
+| 初回バンドル(1605モジュール) | 62秒 |
+
+メモリは`--max-workers 1`で足りているが余裕は少ない。増やすならDS423+はSO-DIMMを1枚足して
+最大6GBにできる。
+
+## アプリとして配布する
+
+Expo Goから卒業して「普通のアプリ」にする場合の選択肢。2026年10月時点の整理。
+
+| | NASでMetro(現在) | Web(PWA) | Macでビルド | Apple Developer Program |
+| --- | --- | --- | --- | --- |
+| 費用 | 0 | 0 | 0 | 年$99 |
+| ホーム画面アイコン | ✗ | ○ | ○ | ○ |
+| レスタイマーの通知 | ○ | ✗ | ○ | ○ |
+| 有効期限 | なし | なし | 7日ごとに再インストール | 1年(更新可) |
+| 家族の端末へ配布 | ○ | ○ | △(各端末をMacに繋ぐ) | ○(TestFlight) |
+| Dynamic Island | ✗ | ✗ | △ | ○ |
+
+- **Expo Go + EAS Updateは不可。** EAS Updateはdevelopment build以降が対象で、Expo Goは開発サーバーが必須
+- **AltStore等のサイドロードも、署名済み`.ipa`が要るためWindowsだけでは不可**
+- Macがあれば無料のApple ID(Free Provisioning)で実機インストールできるが、証明書が7日で切れる
+- 週1回の再インストールが煩わしくなったときがApple Developer Programを検討するタイミング
+
 ## SDK 51→57 移行(2026年9月実施)
 
 iPhone側のExpo Goアプリは常に最新SDKのみに対応しており(App Store版は自動更新されるため)、
