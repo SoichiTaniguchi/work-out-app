@@ -150,7 +150,8 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
 
 ## 次のステップ(候補)
 
-1. 外出先からの接続(Tailscale の設定)
+1. 設定画面のNAS接続先の入力を書きやすくする(現状は素のテキスト入力で、URLを手打ちするのが
+   つらい。履歴からの選択、`http://`の補完、QRコード読み取りなどを検討)
 2. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
 3. デザイン調整(文字サイズなど)
 
@@ -269,6 +270,33 @@ npx expo-doctor
   修正後は必ずキャッシュクリアして再起動する(`npx expo start --go -c`)。
 
 ## トラブルシューティング
+
+### Metroがバンドル中にクラッシュし、iPhoneが`Could not connect to development server`になる
+
+ターミナルに`FATAL ERROR: Zone Allocation failed - process out of memory`が出て
+Metroのプロセスごと終了している状態。8081番を誰も待ち受けなくなるため、iPhoneからは
+「開発サーバーに繋がらない」と見える。
+
+物理メモリに空きがあっても起きる。**ページファイル(仮想メモリ)が無効**だとコミット可能な
+メモリの上限が物理メモリと同じになり、**Docker DesktopのVM(`vmmem`/`vmmemWSL`で5〜6GB)**が
+動いていると上限に張り付いてメモリを確保できなくなるため。
+
+確認(PowerShell):
+
+```powershell
+$os = Get-CimInstance Win32_OperatingSystem
+"Commit free : {0:N1} GB" -f ($os.FreeVirtualMemory/1MB)   # 1GB台なら危険
+Get-Process -Name '*vmmem*' | Select-Object ProcessName, @{N='CommitGB';E={[math]::Round($_.PrivateMemorySize64/1GB,2)}}
+```
+
+対処:
+
+1. Docker Desktopを終了する(タスクトレイ → Quit Docker Desktop)。**その後に**`wsl --shutdown`を実行する。
+   順番が逆だとDocker DesktopがVMを立て直すので効かない
+2. 根本対処としてページファイルを有効にする(システムのプロパティ → 詳細設定 → パフォーマンス →
+   詳細設定 → 仮想メモリ → 「自動的に管理する」。再起動が必要)
+
+同期サーバーはNAS上で動いているので、開発中にPCのDocker Desktopを起動しておく必要はない。
 
 ### NAS(Synology)でサーバーのコンテナが起動直後に落ちる
 
