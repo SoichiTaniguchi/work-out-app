@@ -26,14 +26,29 @@ log() { echo "==> $*"; }
 [ -d "$DEPLOY_DIR" ] || { echo "deploy dir not found: $DEPLOY_DIR" >&2; exit 1; }
 
 log "copy $SOURCE_DIR -> $DEPLOY_DIR"
-# 消えたファイルは残るが、実データを巻き込む危険を避けて --delete はしない
+# 消えたファイルは残るが、実データを巻き込む危険を避けて --delete はしない。
+#
+# --no-same-owner --no-same-permissions が必須。rootで展開するとアーカイブ側の
+# 所有者とパーミッションが配置先のディレクトリにも適用され、Synologyの共有フォルダの
+# ACLが消えて root 所有になる。そのACLは子へ継承されるため、tarで除外したはずの
+# node_modules まで「rootしか書けない」状態になり、次のnpm ciがEACCESで落ちる。
 tar -C "$SOURCE_DIR" \
   --exclude=.git \
   --exclude=node_modules \
   --exclude=.container-home \
   --exclude=server/data \
   --exclude=server/docker-compose.override.yml \
-  -cf - . | tar -C "$DEPLOY_DIR" -xf -
+  -cf - . | tar -C "$DEPLOY_DIR" -xf - --no-same-owner --no-same-permissions
+
+# rootで実行した場合、新しく作られたファイルはroot所有になる。後続のコンテナは
+# RUN_UID で動くので揃えておく。node_modules は数千ファイルあって時間がかかるうえ、
+# 必要ならこの後 npm ci が作り直すので対象から外す。
+if [ "$(id -u)" = "0" ]; then
+  log "fix ownership to $RUN_UID:$RUN_GID"
+  find "$DEPLOY_DIR" -mindepth 1 -maxdepth 1 ! -name node_modules \
+    -exec chown -R "$RUN_UID:$RUN_GID" {} +
+  chown "$RUN_UID:$RUN_GID" "$DEPLOY_DIR"
+fi
 
 cd "$DEPLOY_DIR"
 
