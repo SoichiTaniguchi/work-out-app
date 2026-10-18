@@ -139,8 +139,9 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
       読み出しフィルタ)。画面の見た目・操作は変わらない
 - [x] NAS上の同期用APIサーバー(`server/`。Express + SQLite、`POST /sync`で
       Last Write Winsの差分同期、Docker対応)。起動方法とAPIは`server/README.md`
-- [ ] アプリ側の同期処理(サーバーとのHTTP通信・オフライン時の差分の持ち越し)
-- [ ] 設定画面にNAS接続設定・手動同期を追加
+- [x] アプリ側の同期処理(起動時の自動同期・記録終了時の同期・設定画面の手動同期。
+      オフライン時は失敗を記録して次の機会にやり直す)
+- [x] 設定画面のNAS接続設定(接続先の変更・今すぐ同期・最終同期日時)
 - [ ] `src/native/RestTimerActivity.ts` はJS側インターフェースのみ。実際に
       Dynamic Islandへ表示するには、Swiftで書いたLive Activities
       (ActivityKit)のネイティブモジュールを別途実装し、Expo Config Plugin
@@ -149,11 +150,26 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
 
 ## 次のステップ(候補)
 
-1. アプリ側の同期処理(`POST /sync`の呼び出し、未同期の変更の持ち越し、起動時の自動同期)と
-   設定画面へのNAS接続設定・手動同期の追加
-2. サーバーをNASのDockerで実際に動かす(`server/README.md`の手順)
-3. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
-4. デザイン調整(文字サイズなど)
+1. 外出先からの接続(Synology VPN Server の設定)
+2. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
+3. デザイン調整(文字サイズなど)
+
+## NAS同期
+
+サーバーはNAS上のDockerで動いている(構築手順・API・同期の仕組みは`server/README.md`)。
+アプリ側は`src/sync/`にあり、次のタイミングで同期する。
+
+| タイミング | 内容 |
+| --- | --- |
+| ホーム画面を開いた直後(ユーザー選択後に1回) | 自動。失敗しても画面は止めない |
+| 「今日のトレーニングを終了」 | 自動。ジムで記録した分を帰宅前に送る |
+| 設定画面の「今すぐ同期」 | 手動。結果と失敗理由をその場に表示する |
+
+接続先の初期値は`http://192.168.0.20:3000`(`src/db/appSettings.ts`)で、設定画面から変更できる。
+
+iOSでLAN内のサーバーに繋ぐには「ローカルネットワーク」の許可が必要。Expo GoはMetroとの通信で
+既に許可を取っているためそのまま動くが、将来Dev Client / EAS Buildで自前のアプリにする場合は
+`app.json`に`NSLocalNetworkUsageDescription`と、HTTP(非HTTPS)を使うためのATS設定が必要になる。
 
 ## SDK 51→57 移行(2026年9月実施)
 
