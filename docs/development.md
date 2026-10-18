@@ -39,8 +39,10 @@ Issueを立てる → ブランチを切る → 実装 → PR → CI → Squash 
 Issueの本文・タイトル・コメント、またはPRのレビューコメントに`@claude`と書くと、
 GitHub上でClaude(`.github/workflows/claude.yml`)が動く。
 
-- **Issueで頼む** — 例: 「@claude この改善を実装して」。Claudeがブランチを切って実装・pushし、
-  PRを作るためのリンクをIssueにコメントする。リンクからPRを作るとCIが走る
+- **Issueで頼む** — 例: 「@claude この改善を実装して」。
+  **Claudeはブランチを切って実装・pushするところまでを行い、PRそのものは作らない。**
+  代わりに「PRを作成」するリンクをIssueにコメントするので、それを押してPRを作る。
+  PRを作るとCIが走る
 - **PRで頼む** — レビューコメントに「@claude ここを直して」と書くと、そのPRのブランチに修正をpushする
 - 反応するのはリポジトリのオーナー・共同編集者の書き込みだけ
 - GitHub上のClaudeはNASやiPhoneには触れない。実機での確認は手元で行う
