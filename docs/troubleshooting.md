@@ -37,6 +37,39 @@ Get-Process -Name '*vmmem*' | Select-Object ProcessName, @{N='CommitGB';E={[math
 マウント先が読み取り専用になっている。`chown`や`chmod 777`では解決しない。
 原因と対処は`../server/README.md`の「共有フォルダのACLに合わせてコンテナの実行ユーザーを決める」を参照。
 
+## NASのファイルが突然rootのものになり、コンテナが書き込めなくなる
+
+`npm error code EACCES` / `permission denied, rmdir '/app/node_modules/.bin'` のように、
+これまで書けていた場所に書けなくなる。確認すると配置先が root 所有に変わっている。
+
+```
+$ ls -lnd . node_modules
+drwxr-xr-x  1    0   0 ...    ← root所有
+dr-xr-xr-x+ 1 1026 100 ...    ← 書き込み不可
+
+$ synoacltool -get .
+(synoacltool.c, 596)It's Linux mode    ← ACLが消えている
+
+$ synoacltool -get node_modules
+[0] user:root:allow:rwxp-DaARWc--:fd-- (level:1)   ← rootだけが書ける(親から継承)
+```
+
+**rootで`tar -x`するとアーカイブ側の所有者とパーミッションがディレクトリに適用され、
+Synologyの共有フォルダのACLが消える。** 消えたACLは子へ継承されるので、
+tarで除外していたディレクトリまで巻き込まれて書けなくなる。
+
+対処(配置先を作り直す):
+
+```bash
+cd /volume1/docker
+sudo rm -rf work-out-app/node_modules work-out-app/.container-home
+sudo chown -R 1026:100 work-out-app
+sudo chmod -R u+rwX work-out-app
+```
+
+予防として、rootで展開するときは必ず`--no-same-owner --no-same-permissions`を付ける
+(`scripts/deploy-nas.sh`はそうしてある)。
+
 ## NASへのファイル転送で`subsystem request failed on channel 0`
 
 OpenSSH 9以降の`scp`は内部でSFTPを使うが、DSMは既定でSFTPが無効なため失敗する。
