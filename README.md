@@ -232,6 +232,13 @@ npx expo-doctor
 
 ## トラブルシューティング
 
+### NAS(Synology)でサーバーのコンテナが起動直後に落ちる
+
+`docker compose ps`が`Restarting (1)`になり、ログに
+`SQLITE_CANTOPEN: unable to open database file`が出る場合、DSMの共有フォルダのACLで
+マウント先が読み取り専用になっている。`chown`や`chmod 777`では解決しない。
+原因と対処は`server/README.md`の「共有フォルダのACLに合わせてコンテナの実行ユーザーを決める」を参照。
+
 ### iPhoneでQRコード読み取り後、`http://127.0.0.1:8081/...`が開けない
 
 パソコン側でMetroが正しいLAN(Wi-Fi)のIPアドレスを検出できず、`127.0.0.1`(パソコン自身を指す

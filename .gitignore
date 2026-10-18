@@ -2,6 +2,7 @@ node_modules/
 .expo/
 dist/
 server/data/
+server/docker-compose.override.yml
 web-build/
 *.log
 .env

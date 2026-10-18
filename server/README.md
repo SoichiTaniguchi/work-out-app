@@ -19,18 +19,94 @@ DBファイルは既定で `server/data/work-out-app.db` に作られる(gitigno
 
 ## 動かし方(NAS上・Docker)
 
-```bash
-cd server
-docker compose up -d --build
-docker compose logs -f
+イメージはNAS上でビルドする(PCで作ったイメージはCPUが違う機種では動かないため)。
+実績のある環境: DS423+(x86_64)、DSM 7、Container Manager の Docker Compose v2.20.1。
+
+### 1. コードをNASに送る
+
+NASにgitが入っていない場合は、PC側でGit管理下のファイルだけを固めて送る
+(`node_modules`はWindows用のネイティブバイナリを含むので持ち込まない)。
+
+```powershell
+# PC(PowerShell)・リポジトリのルートで
+git archive --format=tar -o $env:TEMP\work-out-app-server.tar HEAD server
+scp -O $env:TEMP\work-out-app-server.tar <ユーザー名>@<NASのIP>:/volume1/docker/
 ```
+
+`-O`が必要。OpenSSH 9以降の`scp`は内部でSFTPを使うが、DSMは既定でSFTPが無効なため
+`subsystem request failed on channel 0`で失敗する。
+
+```bash
+# NAS側
+cd /volume1/docker
+mkdir -p work-out-app && tar -xf work-out-app-server.tar -C work-out-app
+rm work-out-app-server.tar
+cd work-out-app/server
+```
+
+### 2. 共有フォルダのACLに合わせてコンテナの実行ユーザーを決める(重要)
+
+DSMの共有フォルダにはACLがかかっており、**`chown`や`chmod 777`だけでは書き込めるようにならない**。
+`/volume1/docker`配下の既定のACLは次のようになっている。
+
+```
+$ synoacltool -get data
+[0] group:administrators:allow:rwxpdDaARWc--   ← 書ける
+[1] user:ContainerManager:allow:rwxpdDaARWc--  ← 書ける
+[2] everyone::allow:r-x---a-R-c--              ← 読むだけ
+```
+
+コンテナのプロセスが`administrators`(gid 101)に属していないと`everyone`として扱われ、
+読み取り専用になってSQLiteが`SQLITE_CANTOPEN: unable to open database file`で起動直後に落ちる
+(`docker compose ps`では`Restarting (1)`になる)。
+
+そこでNAS固有の設定を`docker-compose.override.yml`に書く。composeが自動で読み込むので、
+リポジトリの`docker-compose.yml`は変更しない(このファイルはgit管理外)。
+
+```bash
+mkdir -p data
+sudo chown -R $(id -u):$(id -g) data
+
+cat > docker-compose.override.yml <<EOF
+services:
+  server:
+    user: "$(id -u):$(id -g)"
+    group_add:
+      - "101"
+EOF
+```
+
+書き込めるかは、起動前に単体で試せる。
+
+```bash
+sudo docker run --rm -u $(id -u):$(id -g) --group-add 101 \
+  -v $(pwd)/data:/data work-out-app-server \
+  sh -c 'touch /data/write-test && echo WRITE_OK && rm /data/write-test'
+```
+
+### 3. ビルドして起動
+
+```bash
+sudo docker compose up -d --build     # 初回は5〜10分
+sudo docker compose ps                # STATUS が Up ... (healthy) になればOK
+curl http://localhost:3000/health
+sudo docker compose logs -f           # 落ちるときはここを見る
+```
+
+PCからも `curl.exe http://<NASのIP>:3000/health` で確認する。繋がらない場合はDSMの
+ファイアウォールでLANからの3000番を許可する。
 
 - DBファイルは `server/data/` をコンテナの `/data` にマウントして永続化する。
   NASのHyper Backupでこのフォルダを対象にしておけばバックアップになる。
-- コンテナは`node`ユーザー(uid 1000)で動くため、マウント先のフォルダに書き込めないときは
-  NAS側で `chown -R 1000:1000 data` するか、`docker-compose.yml` に `user:` を足す。
+- NASのIPはルーターのDHCP設定で固定しておくと、アプリ側の接続先を入れ直さずに済む。
 - 外出先からはSynology VPN Serverで自宅LANに入ってから同じアドレスにアクセスする
-  (アプリ側の接続先を切り替えない)。
+  (アプリ側の接続先を切り替えない)。QuickConnectはDSMと純正パッケージを中継する仕組みで、
+  自前のコンテナのポートは対象外なので使えない。
+
+### 更新するとき
+
+1. の手順でtarを送り直して展開し、`sudo docker compose up -d --build`。
+`docker-compose.override.yml`と`data/`はtarに含まれないので上書きされない。
 
 ### 環境変数
 
