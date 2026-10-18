@@ -41,6 +41,33 @@ interface SetRowState {
   done: boolean;
   // 今日の記録から復元した行。空欄は「記録されていない項目」なので前回値で埋めない。
   recorded?: boolean;
+  // 前回値を初期値として入れただけの行。ユーザーが触るまでは「入力あり」と見なさない
+  // (見なすと、開いただけで未記録の警告が出たり、全セットが記録対象になる)。
+  prefilled?: boolean;
+}
+
+// 前回の同じセット番号の値を文字列にして返す。前回に無い項目は空欄のまま。
+function newRow(source: SetLog | undefined, fields: RecordFieldType[]): SetRowState {
+  const values: SetRowState["values"] = {};
+  if (source) {
+    for (const field of fields) {
+      const value = source[FIELD_CONFIG[field].key];
+      if (value !== undefined) values[field] = String(value);
+    }
+  }
+  return { values, done: false, prefilled: Object.keys(values).length > 0 };
+}
+
+// 入力欄の文字列から SetLog を作る(セット追加時に直前の行をコピーするため)
+function setFromValues(values: SetRowState["values"], fields: RecordFieldType[]): SetLog {
+  const set: SetLog = {};
+  for (const field of fields) {
+    const raw = values[field];
+    if (raw === undefined || raw.trim() === "") continue;
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) (set as Record<string, number>)[FIELD_CONFIG[field].key] = parsed;
+  }
+  return set;
 }
 
 export default function RecordScreen({ navigation, route }: Props) {
@@ -86,10 +113,12 @@ export default function RecordScreen({ navigation, route }: Props) {
           done: true,
           recorded: true,
         }));
-        setSets([...recorded, { values: {}, done: false }]);
+        const fields = ex?.fieldDefinition ?? [];
+        setSets([...recorded, newRow(last?.sets[recorded.length], fields)]);
       } else {
         const initialCount = last ? last.sets.length : DEFAULT_SET_COUNT;
-        setSets(Array.from({ length: initialCount }, () => ({ values: {}, done: false })));
+        const fields = ex?.fieldDefinition ?? [];
+        setSets(Array.from({ length: initialCount }, (_, i) => newRow(last?.sets[i], fields)));
       }
     })();
   }, [db, exerciseId]);
@@ -149,7 +178,7 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   const setFieldValue = (index: number, field: RecordFieldType, text: string) => {
     setSets((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, values: { ...row.values, [field]: text } } : row))
+      prev.map((row, i) => (i === index ? { ...row, values: { ...row.values, [field]: text }, prefilled: false } : row))
     );
   };
 
@@ -162,7 +191,7 @@ export default function RecordScreen({ navigation, route }: Props) {
         const current = row.values[field];
         const base = current && current.trim() !== "" ? Number(current) : previousValue ?? 0;
         const next = Math.max(0, (Number.isNaN(base) ? 0 : base) + delta);
-        return { ...row, values: { ...row.values, [field]: String(next) } };
+        return { ...row, values: { ...row.values, [field]: String(next) }, prefilled: false };
       })
     );
   };
@@ -170,6 +199,7 @@ export default function RecordScreen({ navigation, route }: Props) {
   // チェック済み、または何か入力されている行を記録対象にする。
   // チェックを忘れたまま完了しても入力が捨てられないようにするため。
   const hasInput = (row: SetRowState) =>
+    !row.prefilled &&
     (exercise?.fieldDefinition ?? []).some((field) => (row.values[field] ?? "").trim() !== "");
 
   const buildSets = (rows: SetRowState[]): SetLog[] => {
@@ -225,7 +255,14 @@ export default function RecordScreen({ navigation, route }: Props) {
   };
 
   const addSet = () => {
-    setSets((prev) => [...prev, { values: {}, done: false }]);
+    const fields = exercise?.fieldDefinition ?? [];
+    setSets((prev) => {
+      // 前回にそのセット番号があればそれを、無ければ直前のセットの値を初期値にする
+      const lastRow = prev[prev.length - 1];
+      const source =
+        lastLog?.sets[prev.length] ?? (lastRow ? setFromValues(lastRow.values, fields) : undefined);
+      return [...prev, newRow(source, fields)];
+    });
   };
 
   const handleFinish = async () => {
