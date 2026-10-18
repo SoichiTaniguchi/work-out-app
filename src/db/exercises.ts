@@ -107,7 +107,7 @@ export async function createExercise(
     );
 
     if (opts?.folderId) {
-      await addExerciseToFolder(db, opts.folderId, exercise.id);
+      await insertFolderLink(db, opts.folderId, exercise.id);
     }
   });
 
@@ -163,7 +163,9 @@ export async function deleteExercise(db: SQLiteDatabase, id: string): Promise<vo
   });
 }
 
-export async function addExerciseToFolder(
+// トランザクションを張らずにリンクを足す。withTransactionAsync は入れ子にできないため、
+// 既にトランザクション内の呼び出し元(createExercise)はこちらを直接使う。
+async function insertFolderLink(
   db: SQLiteDatabase,
   folderId: string,
   exerciseId: string
@@ -176,12 +178,20 @@ export async function addExerciseToFolder(
     [folderId]
   )) ?? { nextOrder: 0 };
 
+  await db.runAsync(
+    `INSERT OR IGNORE INTO folder_exercises (folder_id, exercise_id, order_index) VALUES (?, ?, ?);`,
+    [folderId, exerciseId, nextOrder]
+  );
+  await db.runAsync("UPDATE folders SET updated_at = ? WHERE id = ?;", [nowIso(), folderId]);
+}
+
+export async function addExerciseToFolder(
+  db: SQLiteDatabase,
+  folderId: string,
+  exerciseId: string
+): Promise<void> {
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      `INSERT OR IGNORE INTO folder_exercises (folder_id, exercise_id, order_index) VALUES (?, ?, ?);`,
-      [folderId, exerciseId, nextOrder]
-    );
-    await db.runAsync("UPDATE folders SET updated_at = ? WHERE id = ?;", [nowIso(), folderId]);
+    await insertFolderLink(db, folderId, exerciseId);
   });
 }
 
