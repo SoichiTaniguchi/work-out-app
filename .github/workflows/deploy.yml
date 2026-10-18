@@ -1,0 +1,56 @@
+name: Deploy to NAS
+
+# CIが成功したときだけ走らせる。壊れたコードがNASに流れないようにするため、
+# push ではなく workflow_run でCIの結果を待つ。
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # 手動でも流せるようにしておく(NASを復旧させたいときなど)
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-nas
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: NASを更新
+    # NAS上のself-hosted runnerで動く(クラウドのランナーからはNASに到達できないため)
+    runs-on: [self-hosted, nas]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run の場合、CIが通ったコミットをそのまま配る
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: 配置して再起動
+        run: bash scripts/deploy-nas.sh "$GITHUB_WORKSPACE"
+
+      - name: 同期サーバーの起動確認
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3000/health > /dev/null; then
+              echo "sync server: ok"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "sync server did not come back" >&2
+          exit 1
+
+      - name: Metroの起動確認
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:8081/status > /dev/null; then
+              echo "metro: ok"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "metro did not come back" >&2
+          exit 1

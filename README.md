@@ -148,12 +148,10 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
       または `expo prebuild` で生成されるiOSプロジェクトに組み込む必要があります。
 - [ ] デザイン調整(文字サイズなど)— 機能が一通り揃ってから着手する方針
 
-## 次のステップ(候補)
+## 次にやること・開発の進め方
 
-1. 設定画面のNAS接続先の入力を書きやすくする(現状は素のテキスト入力で、URLを手打ちするのが
-   つらい。履歴からの選択、`http://`の補完、QRコード読み取りなどを検討)
-2. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
-3. デザイン調整(文字サイズなど)
+やることは [Issues](https://github.com/SoichiTaniguchi/work-out-app/issues) で管理している。
+開発の流れ(Issue → PR → CI → NASへの自動デプロイ)は [docs/development.md](docs/development.md) を参照。
 
 ## NAS同期
 

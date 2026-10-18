@@ -1,0 +1,2 @@
+# テンプレートを使わない空のIssueも許可する(スマホからさっとメモしたいとき用)。
+blank_issues_enabled: true

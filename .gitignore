@@ -8,3 +8,6 @@ web-build/
 .env
 ios/
 android/
+
+# Claude Codeのこのマシン固有の設定(共有する設定は .claude/settings.json)
+.claude/settings.local.json
