@@ -150,7 +150,7 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
 
 ## 次のステップ(候補)
 
-1. 外出先からの接続(Synology VPN Server の設定)
+1. 外出先からの接続(Tailscale の設定)
 2. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
 3. デザイン調整(文字サイズなど)
 
@@ -166,6 +166,28 @@ server/                   NAS上のDockerで動かす同期用APIサーバー(�
 | 設定画面の「今すぐ同期」 | 手動。結果と失敗理由をその場に表示する |
 
 接続先の初期値は`http://192.168.0.20:3000`(`src/db/appSettings.ts`)で、設定画面から変更できる。
+
+### 外出先からの同期(Tailscale)
+
+同期できない場所でも記録は普通に取れる(失敗を記録して次の機会にやり直す)ため、外出先からの同期は
+必須ではない。常時同期したい場合はTailscaleでNASとiPhoneを同じプライベートネットワークに入れる。
+ルーターのポート開放もDDNSも不要で、APIをインターネットに露出させずに済む。
+
+1. [tailscale.com](https://tailscale.com/)でアカウントを作る(Google等でサインイン)
+2. NAS: パッケージセンターで **Tailscale** を検索してインストール → 開く → ログインして
+   表示されたURLを承認する
+3. iPhone: App Storeで **Tailscale** を入れて同じアカウントでログイン → 接続をオンにする
+4. NASのTailscaleアドレス(`100.x.y.z`)を確認する。NASのSSHで:
+   ```bash
+   sudo tailscale ip -4
+   ```
+   (Tailscaleの管理画面 [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines) でも見られる)
+5. アプリの設定画面 → 接続先を `http://100.x.y.z:3000` に変更する
+
+**このアドレスは自宅のWi-Fi内でも使える**(Tailscaleは同じLAN内なら直接通信する)ので、
+接続先はこれ1つにしておけば自宅でも外出先でも同じように同期できる。
+
+なお、Synology純正の選択肢を採らなかった理由は`docs/spec.md`の「今後決めること・オープン課題」に記録した。
 
 iOSでLAN内のサーバーに繋ぐには「ローカルネットワーク」の許可が必要。Expo GoはMetroとの通信で
 既に許可を取っているためそのまま動くが、将来Dev Client / EAS Buildで自前のアプリにする場合は

@@ -155,8 +155,8 @@ Synology NASをバックエンドとし、Docker上でAPIサーバーを稼働�
 flowchart LR
   App[アプリ<br/>ローカルデバイスストレージ] -- REST API/HTTPS --> Server[NAS: Docker上のAPIサーバー]
   Server --> DB[(DB)]
-  App -. 外出先 .-> VPN[VPN/リモートアクセス]
-  VPN --> Server
+  App -. 外出先 .-> TS[Tailscale<br/>プライベートネットワーク]
+  TS --> Server
 ```
 
 ### データフロー
@@ -165,7 +165,7 @@ flowchart LR
 | --- | --- |
 | 自宅ネットワーク接続時 | アプリがNAS上のAPIに直接アクセスして読み書き |
 | 外出先(ジムなど) | アプリはローカルに一時保存してオフラインでも記録可能 |
-| 外出先 + VPN/リモートアクセス接続時 | NASのAPIに直接接続して読み書き(自宅接続時と同じ挙動) |
+| 外出先 + Tailscale接続時 | NASのAPIに直接接続して読み書き(自宅接続時と同じ挙動・同じアドレス) |
 | アプリ起動時 | 未同期のローカル変更を検知し、NASと自動で差分同期(ユーザー操作不要) |
 
 ### 構成要素(例)
@@ -174,8 +174,8 @@ flowchart LR
 | --- | --- |
 | サーバー | Dockerコンテナとして NAS上で稼働(Node.js + Express で確定) |
 | DB | SQLiteをNASボリューム上のファイルとして永続化 |
-| 通信 | REST API over HTTPS(自宅・VPN経由とも同一エンドポイント) |
-| 外部接続 | Synology VPN Serverパッケージを利用(NAS自体がVPNサーバー) |
+| 通信 | REST API over HTTP(自宅・外出先とも同一エンドポイント)。通信路はTailscaleが暗号化する |
+| 外部接続 | Tailscale(NASとiPhoneを同じプライベートネットワークに入れる)。ルーターのポート開放は不要 |
 
 - 衝突解決は最後に保存した方で上書き(Last Write Wins)。`updated_at`が同時刻の場合は
   端末ごとに結果がぶれないようサーバー側を残す
@@ -202,11 +202,11 @@ flowchart LR
 | --- | --- | --- |
 | アプリ(クライアント) | React Native | 確定。Dynamic Islandを使いたいため、休憩タイマー部分はLive Activities(ActivityKit)を使うSwiftネイティブモジュールをReact Nativeに組み込む必要あり |
 | ローカル保存 | 端末内DB(例: SQLite系) | オフライン時の一時保存・同期キューに使用 |
-| 通信 | REST API over HTTPS | NAS上のAPIサーバーと通信 |
+| 通信 | REST API over HTTP | NAS上のAPIサーバーと通信。インターネットに公開せず、Tailscale内でのみ到達できる |
 | NASサーバー | Dockerコンテナ(例: Node.js + Express等) | Node.js + Expressで確定 |
 | DB(NAS側) | SQLite | データ量・同時アクセス数を見て選定 |
 | 認証 | ユーザー選択のみ、パスワードなし(MVP) | 少人数利用のため簡易方式で良い見込み。ユーザーを新規追加したら、再ログインでユーザーを選択できる(パスワードはまずは無くてよい) |
-| 外部接続 | Synology VPN Serverパッケージ | NASのリモートアクセス機能を活用 |
+| 外部接続 | Tailscale | NASとiPhoneを同じプライベートネットワークに入れる |
 
 ## API/データベース設計(たたき台)
 
@@ -260,7 +260,12 @@ logs / personal_records)は`updated_at`(更新日時)と`deleted_at`(論理削�
 - [x] (確定)React Nativeを採用。Dynamic Island対応(ActivityKitネイティブモジュール)の具体実装方法は別途検討
 - [x] (確定)Node.js + Express + SQLiteを採用
 - [x] 認証はユーザー選択のみ(パスワードなし)で確定。将来必要になったらパスワード/トークン方式を検討
-- [x] (確定)Synology VPN Serverパッケージを利用し外出先からNASに接続
+- [x] (確定・2026年10月変更)外出先からの接続はTailscaleを使う。当初はSynology VPN Server
+      パッケージで確定していたが、(1)ルーターのポート開放とDDNSが必要、(2)iOSのL2TP VPNは
+      常時接続に向かず毎回手動接続になる、の2点から変更した。QuickConnectはDSMと純正パッケージ
+      しか中継せず、自作コンテナのポートには使えないため選択肢にならない。
+      ポート開放を伴う純正の代替(DDNS + リバースプロキシ + Let's Encrypt)は、認証の薄いAPIを
+      インターネットに露出させることになるため採らない
 - [x] (確定)オフライン編集が衝突した場合は最後に保存した方で上書き(Last Write Wins)
 - [x] (確定)MVPでは重量・回数・時間・距離・RPEの5種類のみ。ユーザー自定義項目はフェーズ2以降
 - [x] (確定)家族間のテンプレート共有は不要。各ユーザーのデータは完全に独立
