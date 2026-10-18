@@ -177,8 +177,11 @@ flowchart LR
 | 通信 | REST API over HTTPS(自宅・VPN経由とも同一エンドポイント) |
 | 外部接続 | Synology VPN Serverパッケージを利用(NAS自体がVPNサーバー) |
 
-- NASサーバーの具体的な実装方法は未確定(「今後決めること」参照)
-- 衝突解決は最後に保存した方で上書き(Last Write Wins)で確定
+- 衝突解決は最後に保存した方で上書き(Last Write Wins)。`updated_at`が同時刻の場合は
+  端末ごとに結果がぶれないようサーバー側を残す
+- 「どこまで受け取ったか」は端末の時計ではなくサーバー内部の連番(`server_seq`)で追う。
+  端末の時計がずれていても変更を取りこぼさないため
+- サーバーの実装は`server/`(Express + SQLite + Docker)。手順とAPIは`server/README.md`
 
 ## マルチユーザー対応
 
@@ -209,17 +212,18 @@ flowchart LR
 
 詳細実装は未確定だが、データ構造のたたき台として以下を想定。
 
-### 主要エンドポイント(例)
+### 主要エンドポイント
+
+アプリは常にローカルDBを読み書きし、サーバーとは差分同期だけでやり取りする(オフラインでも
+操作を止めないため)。そのため種目・記録ごとのCRUDエンドポイントは設けず、`POST /sync`に一本化した。
 
 | Method | Path | 内容 |
 | --- | --- | --- |
+| POST | /sync | 差分同期。ローカルの変更を送り、前回以降のサーバー側の変更を受け取る |
 | GET | /users | ユーザー一覧(ログイン画面用) |
-| GET | /users/:id/folders | フォルダ/プログラム一覧 |
-| GET/POST/PUT/DELETE | /users/:id/exercises | 種目の取得・作成・編集・削除 |
-| GET/POST | /users/:id/exercises/:exerciseId/logs | 特定種目の記録取得・新規作成 |
-| PUT/DELETE | /logs/:logId | 記録の更新・削除 |
-| GET | /users/:id/records | 自己ベスト(PR)一覧 |
-| POST | /sync | オフライン変更分の一括アップロード(差分同期) |
+| GET | /health | 起動確認 |
+
+リクエスト・レスポンスの詳細は`server/README.md`を参照。
 
 ### 主要テーブル(例)
 

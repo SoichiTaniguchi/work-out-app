@@ -108,6 +108,7 @@ src/
   native/                 Dynamic Island(ActivityKit)連携用ブリッジ(要ネイティブ実装)
   theme/                  配色トークン
   types/                  DB設計(仕様書)に対応する型定義
+server/                   NAS上のDockerで動かす同期用APIサーバー(別パッケージ。server/README.md参照)
 ```
 
 ## 現状の実装状況
@@ -136,7 +137,10 @@ src/
       セット数・負荷量・更新した自己ベスト・種目別の記録を表示)
 - [x] NAS同期の土台(全テーブルの`updated_at`・論理削除`deleted_at`、削除の伝播と
       読み出しフィルタ)。画面の見た目・操作は変わらない
-- [ ] NAS上のAPIサーバーとのHTTP通信・オフライン差分同期
+- [x] NAS上の同期用APIサーバー(`server/`。Express + SQLite、`POST /sync`で
+      Last Write Winsの差分同期、Docker対応)。起動方法とAPIは`server/README.md`
+- [ ] アプリ側の同期処理(サーバーとのHTTP通信・オフライン時の差分の持ち越し)
+- [ ] 設定画面にNAS接続設定・手動同期を追加
 - [ ] `src/native/RestTimerActivity.ts` はJS側インターフェースのみ。実際に
       Dynamic Islandへ表示するには、Swiftで書いたLive Activities
       (ActivityKit)のネイティブモジュールを別途実装し、Expo Config Plugin
@@ -145,9 +149,11 @@ src/
 
 ## 次のステップ(候補)
 
-1. NAS上のAPIサーバー(Node.js + Express、Docker)とのHTTP通信・オフライン差分同期
-2. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
-3. デザイン調整(文字サイズなど)
+1. アプリ側の同期処理(`POST /sync`の呼び出し、未同期の変更の持ち越し、起動時の自動同期)と
+   設定画面へのNAS接続設定・手動同期の追加
+2. サーバーをNASのDockerで実際に動かす(`server/README.md`の手順)
+3. (Apple Developer Program登録後)Dev Clientのクラウドビルド → Dynamic Island用ネイティブモジュール(Swift/ActivityKit)の実装
+4. デザイン調整(文字サイズなど)
 
 ## SDK 51→57 移行(2026年9月実施)
 

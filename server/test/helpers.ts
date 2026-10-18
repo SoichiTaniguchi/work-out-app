@@ -3,7 +3,16 @@ import type { AddressInfo } from "node:net";
 import type { Database } from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/db/open.js";
-import { emptyChanges, type SyncChanges, type SyncResponse } from "../src/sync/types.js";
+import {
+  emptyChanges,
+  type SyncChanges,
+  type SyncExercise,
+  type SyncFolder,
+  type SyncPersonalRecord,
+  type SyncResponse,
+  type SyncUser,
+  type SyncWorkoutLog,
+} from "../src/sync/types.js";
 
 export interface TestServer {
   db: Database;
@@ -60,7 +69,12 @@ export async function postSync(
 
 export const ALICE = "u1";
 
-export function user(id: string, name: string, updatedAt: string, deletedAt: string | null = null) {
+export function user(
+  id: string,
+  name: string,
+  updatedAt: string,
+  deletedAt: string | null = null
+): SyncUser {
   return { id, name, updatedAt, deletedAt };
 }
 
@@ -69,14 +83,14 @@ export function exercise(
   name: string,
   updatedAt: string,
   deletedAt: string | null = null
-) {
+): SyncExercise {
   return {
     id,
     userId: ALICE,
     name,
     bodyParts: ["胸"],
     equipment: "バーベル",
-    fieldDefinition: ["weight", "reps"] as const,
+    fieldDefinition: ["weight", "reps"],
     updatedAt,
     deletedAt,
   };
@@ -88,7 +102,7 @@ export function folder(
   exerciseIds: string[],
   updatedAt: string,
   deletedAt: string | null = null
-) {
+): SyncFolder {
   return { id, userId: ALICE, name, order: 0, exerciseIds, updatedAt, deletedAt };
 }
 
@@ -98,7 +112,7 @@ export function workoutLog(
   updatedAt: string,
   sets: { weight: number; reps: number }[],
   deletedAt: string | null = null
-) {
+): SyncWorkoutLog {
   return {
     id,
     exerciseId,
@@ -116,11 +130,11 @@ export function personalRecord(
   value: number,
   updatedAt: string,
   deletedAt: string | null = null
-) {
+): SyncPersonalRecord {
   return {
     id,
     exerciseId,
-    type: "maxWeight" as const,
+    type: "maxWeight",
     value,
     achievedAt: updatedAt,
     updatedAt,
