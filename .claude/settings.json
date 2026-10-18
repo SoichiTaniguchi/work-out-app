@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git branch *)",
+      "Bash(grep -i \"^react-native-svg$\")",
+      "Bash(git commit -m ' *)",
+      "PowerShell(npx expo install react-native-svg)"
+    ]
+  }
+}
