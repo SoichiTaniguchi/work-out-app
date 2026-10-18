@@ -210,7 +210,7 @@ PCは不要で、外出先からも使える。
 # 1. PC: Git管理下のファイルだけを固めて転送
 cd C:\Users\astro\Develop\work-out-app
 git archive --format=tar -o $env:TEMP\work-out-app-full.tar HEAD
-scp -O $env:TEMP\work-out-app-full.tar HomeProtector@192.168.0.20:/volume1/docker/
+scp -O $env:TEMP\work-out-app-full.tar <ユーザー名>@192.168.0.20:/volume1/docker/
 ```
 
 ```bash
