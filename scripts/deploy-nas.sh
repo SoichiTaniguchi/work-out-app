@@ -74,4 +74,33 @@ log "rebuild sync server"
 # レイヤキャッシュが効くので、server/ に変更が無ければすぐ終わる
 (cd "$DEPLOY_DIR/server" && $DOCKER compose up -d --build)
 
+# 起動確認はホストのネットワークに入ったコンテナから行う。
+# GitHub Actionsのself-hosted runnerはコンテナの中で動いており、そのままcurlすると
+# localhost が runner 自身を指してしまってNASのポートに届かない。
+wait_for() {
+  local name="$1" url="$2" tries="$3"
+  log "wait for $name ($url)"
+  if $DOCKER run --rm --network host "$NODE_IMAGE" node -e '
+    const [url, tries] = [process.argv[1], Number(process.argv[2])];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    (async () => {
+      for (let i = 0; i < tries; i += 1) {
+        try {
+          if ((await fetch(url)).ok) process.exit(0);
+        } catch {}
+        await sleep(2000);
+      }
+      process.exit(1);
+    })();
+  ' "$url" "$tries"; then
+    log "$name: ok"
+  else
+    echo "$name did not come back: $url" >&2
+    return 1
+  fi
+}
+
+wait_for "sync server" "http://localhost:3000/health" 30
+wait_for "metro" "http://localhost:8081/status" 60
+
 log "done"

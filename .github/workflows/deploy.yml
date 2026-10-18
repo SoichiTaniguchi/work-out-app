@@ -28,29 +28,7 @@ jobs:
           # workflow_run の場合、CIが通ったコミットをそのまま配る
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      # 起動確認もスクリプトの中で行う。runnerはコンテナの中で動いているため、
+      # ここで直接curlするとlocalhostがrunner自身を指してNASのポートに届かない。
       - name: 配置して再起動
         run: bash scripts/deploy-nas.sh "$GITHUB_WORKSPACE"
-
-      - name: 同期サーバーの起動確認
-        run: |
-          for i in $(seq 1 30); do
-            if curl -fs http://localhost:3000/health > /dev/null; then
-              echo "sync server: ok"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "sync server did not come back" >&2
-          exit 1
-
-      - name: Metroの起動確認
-        run: |
-          for i in $(seq 1 60); do
-            if curl -fs http://localhost:8081/status > /dev/null; then
-              echo "metro: ok"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "metro did not come back" >&2
-          exit 1

@@ -37,6 +37,23 @@ Get-Process -Name '*vmmem*' | Select-Object ProcessName, @{N='CommitGB';E={[math
 マウント先が読み取り専用になっている。`chown`や`chmod 777`では解決しない。
 原因と対処は`../server/README.md`の「共有フォルダのACLに合わせてコンテナの実行ユーザーを決める」を参照。
 
+## 自動デプロイの起動確認だけが失敗する(`sync server did not come back`)
+
+デプロイ本体(コピー・`npm ci`・再起動)は成功しているのに、最後の確認だけ落ちる。
+
+**self-hosted runnerはコンテナの中で動いているため、`localhost`がrunner自身を指す。**
+NASのホスト側で公開されているポートには届かない。
+
+ホストのネットワークに入ったコンテナから確認する。
+
+```bash
+docker run --rm --network host node:20-bookworm-slim \
+  node -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1))"
+```
+
+`scripts/deploy-nas.sh`の`wait_for`はこの形にしてある。
+同じ理由で、runnerの中から直接NASのサービスを叩くコマンドは書かないこと。
+
 ## NASのファイルが突然rootのものになり、コンテナが書き込めなくなる
 
 `npm error code EACCES` / `permission denied, rmdir '/app/node_modules/.bin'` のように、
