@@ -8,7 +8,7 @@ const SEED_USERS = [
   { id: "u3", name: "お母さん" },
 ];
 
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -136,5 +136,20 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       await db.execAsync("PRAGMA user_version = 4;");
     });
     currentVersion = 4;
+  }
+
+  if (currentVersion < 5) {
+    await db.withTransactionAsync(async () => {
+      // 端末ごとの設定と同期の状態。NASの接続先や「どこまで同期したか」を持つ。
+      // 端末固有の情報なので、このテーブル自体は同期しない。
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        );
+      `);
+      await db.execAsync("PRAGMA user_version = 5;");
+    });
+    currentVersion = 5;
   }
 }
