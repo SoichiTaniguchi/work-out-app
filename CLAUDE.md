@@ -32,11 +32,12 @@ React Native (Expo) 製のiOSアプリ。
 - **マージはSquash and merge。PR 1本がmainの1コミットになる。**
   そのため**PRは小さく1目的に保ち、大きな機能は複数のPRに分ける**。1ブランチに多数の
   コミットを積む作り方はしない(squashで区切りが消えるため)。
-- **PRのタイトルがそのままコミットの件名になる**ので、Conventional Commitsの形式で書く。
-- 作業の起点はGitHub Issue。着手時にIssue番号を確認し、コミットメッセージに`(#12)`を付ける。
-  そのIssueを完了させるコミットには`Closes #12`を書く。
-- コミットメッセージは日本語・英語どちらでもよいが、内容が分かるように具体的に書く。
-  種別はConventional Commits(`feat:` `fix:` `docs:` `refactor:` `test:` `ci:`)に揃える。
+- **コミットの件名とPRのタイトルは`<type>(<scope>): <subject>`の形式で、英語で書く。**
+  type・scope・subjectの一覧と書き方は`docs/development.md`の「コミット規約」に従う。
+  **本文は日本語**で、「なぜそうしたか」を書く。
+- 作業の起点はGitHub Issue。コミットの件名末尾に`(#12)`を付け、そのIssueを完了させる
+  コミットの本文に`Closes #12`を書く。**PRのタイトルには番号を付けない**
+  (squash時にGitHubが`(#PR番号)`を足すため二重になる)。
 - `npm audit fix --force`は実行しない(Expo/React Navigation関連のバージョンが壊れる原因になるため)。
   パッケージのバージョン確認は`npx expo install --check`を使う。
 - ドキュメントと実装がずれた場合は両方を最新にする。どのファイルに書くかは
