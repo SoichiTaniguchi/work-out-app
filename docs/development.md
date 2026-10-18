@@ -160,6 +160,156 @@ sudo bash scripts/deploy-nas.sh /path/to/checkout
 - `server/docker-compose.override.yml` — このNAS用の実行ユーザー設定
 - `node_modules/`、`.container-home/`
 
+## NAS上のMetroの構築・更新
+
+アプリはNASのDockerで動くMetroから配信している(背景と選択の経緯は「アプリとして配布する」)。
+**mainにマージすれば自動で更新される**ので、通常は以下の手動手順は不要。
+NASを作り直すときや、自動デプロイが動かないときに使う。
+
+```powershell
+# 1. PC: Git管理下のファイルだけを固めて転送
+cd C:\Users\astro\Develop\work-out-app
+git archive --format=tar -o $env:TEMP\work-out-app-full.tar HEAD
+scp -O $env:TEMP\work-out-app-full.tar <ユーザー名>@192.168.0.20:/volume1/docker/
+```
+
+```bash
+# 2. NAS: 展開
+cd /volume1/docker
+tar -xf work-out-app-full.tar -C work-out-app && rm work-out-app-full.tar
+cd work-out-app
+
+# 3. 依存パッケージ(package-lock.jsonが変わったときだけ。10分ほどかかる)
+sudo docker run --rm -v "$(pwd)":/app -w /app \
+  -u $(id -u):$(id -g) --group-add 101 \
+  -e HOME=/app/.container-home \
+  node:20-bookworm-slim npm ci
+
+# 4. Metroを常駐させる
+sudo docker rm -f workout-metro 2>/dev/null
+sudo docker run -dit --name workout-metro --network host --restart unless-stopped \
+  -v "$(pwd)":/app -w /app \
+  -u $(id -u):$(id -g) --group-add 101 \
+  -e HOME=/tmp \
+  -e CI=1 \
+  -e REACT_NATIVE_PACKAGER_HOSTNAME=100.98.40.63 \
+  node:20-bookworm-slim npx expo start --go --max-workers 1
+
+sudo docker logs -f workout-metro    # Waiting on http://localhost:8081 が出れば成功
+```
+
+### 引数と環境変数の理由
+
+| 指定 | 理由 |
+| --- | --- |
+| `--network host` | Tailscaleのインターフェース(`100.x.y.z`)でも8081番を受けるため |
+| `REACT_NATIVE_PACKAGER_HOSTNAME` | これが無いとExpo GoがNASのLAN側アドレスを見に行き、外出先から繋がらない |
+| `CI=1` | 付けないとExpo CLIが「ログインしますか」の対話プロンプトを出し、バックグラウンドのコンテナでは延々ループする。代償としてwatchが無効になる |
+| `HOME=/tmp` | `~/.expo`への書き込みがNAS共有フォルダのACLと相性が悪く、renameがENOENTで失敗する。コンテナ内部に逃がす |
+| `--group-add 101` | DSMのACL対策(`../server/README.md`と同じ理由) |
+| `--max-workers 1` | NASのメモリが1.7GBしかないため。既定ではコア数(4)だけワーカーが立ち、メモリ不足になる |
+
+詰まったときは[troubleshooting.md](troubleshooting.md)を参照。
+
+### 実測値(DS423+ / メモリ1.7GB / 4コア)
+
+| 処理 | 時間 |
+| --- | --- |
+| `npm ci` | 3分 |
+| 初回バンドル(1605モジュール) | 62秒 |
+
+メモリは`--max-workers 1`で足りているが余裕は少ない。増やすならDS423+はSO-DIMMを1枚足して
+最大6GBにできる。
+
+## アプリとして配布する
+
+Expo Goから卒業して「普通のアプリ」にする場合の選択肢。2026年10月時点の整理。
+
+| | NASでMetro(現在) | Web(PWA) | Macでビルド | Apple Developer Program |
+| --- | --- | --- | --- | --- |
+| 費用 | 0 | 0 | 0 | 年$99 |
+| ホーム画面アイコン | ✗ | ○ | ○ | ○ |
+| レスタイマーの通知 | ○ | ✗ | ○ | ○ |
+| 有効期限 | なし | なし | 7日ごとに再インストール | 1年(更新可) |
+| 家族の端末へ配布 | ○ | ○ | △(各端末をMacに繋ぐ) | ○(TestFlight) |
+| Dynamic Island | ✗ | ✗ | △ | ○ |
+
+- **Expo Go + EAS Updateは不可。** EAS Updateはdevelopment build以降が対象で、Expo Goは開発サーバーが必須
+- **AltStore等のサイドロードも、署名済み`.ipa`が要るためWindowsだけでは不可**
+- Macがあれば無料のApple ID(Free Provisioning)で実機インストールできるが、証明書が7日で切れる
+- 週1回の再インストールが煩わしくなったときがApple Developer Programを検討するタイミング
+
+### Dev Client / EAS Build(Apple Developer Program登録後に使う手順)
+
+Apple Developer Programに登録し、実機に本格インストールしてDynamic Island機能まで
+含めて確認したくなったら以下に進む(現時点では未実施)。
+
+```bash
+# eas-cliをグローバルインストール(毎回 npx eas-cli@latest と打たなくて済む)
+npm install -g eas-cli
+
+# EASにログイン(要Expoアカウント)
+eas login
+
+# EASプロジェクトとの連携(完了済み。app.json の extra.eas.projectId で紐付いている)
+eas init --id 4fbcf2c0-4451-4880-b965-df90130f6020
+
+# iOS向けのビルド設定を生成(初回のみ、"iOS" を選択)
+eas build:configure
+
+# 開発用Dev Clientをクラウドビルド(iOS、要Apple Developer Programアカウント)
+eas build --profile development --platform ios
+```
+
+ビルドが終わるとインストール用リンク(またはTestFlight)が発行されるので、
+実機にインストール後、`npx expo start --dev-client`で接続する。
+
+このとき、NASへHTTPで繋ぐために`app.json`へ`NSLocalNetworkUsageDescription`と
+ATS(App Transport Security)の設定を足す必要がある。Expo GoはMetroとの通信で既に
+ローカルネットワークの許可を取っているため今は不要だが、自前のアプリにすると必要になる。
+
+## 現状の実装状況
+
+- [x] GitHubリポジトリ作成・SSH認証設定
+- [x] Node.jsバージョンの統一(v20系)
+- [x] Expo/EASプロジェクトの作成・連携(`eas init`完了)
+- [x] iOS向け`eas build:configure`実施(EAS Build自体はApple Developer Program未登録のため保留中)
+- [ ] Dev Clientのクラウドビルド — Apple Developer Program登録後に実施
+- [x] Expo Goでの開発・確認フローに切り替え
+- [x] 画面遷移・レイアウトはワイヤーフレーム通りに配置
+- [x] `expo-sqlite`によるローカルDB(users / folders / exercises / folder_exercises /
+      workout_logs / set_logs / personal_records)
+- [x] 種目管理(種目のCRUD、記録項目のカスタマイズ、ドラッグ並び替え、
+      フォルダ/プログラム分け、フォルダのテンプレート化)
+- [x] 部位別のプリセット種目(9部位・61種目)から選んで追加。部位はピル選択式で、
+      ユーザー独自の部位(例: 腕を二頭/三頭に分ける)も追加できる
+- [x] トレーニング記録画面(記録項目に応じた動的入力、前回値の自動表示・差分入力、
+      レスタイマー+ローカル通知、保存時の自己ベスト判定)
+- [x] 履歴・グラフ画面(SVG折れ線グラフ、種目の記録項目に応じた指標切り替え、自己ベスト表示)
+- [x] ホーム画面(プログラム一覧、今週の記録、直近の自己ベスト)
+- [x] 認証(ユーザー選択のみ・パスワードなし)— ユーザーの追加・リネーム・削除に対応
+- [x] 設定画面(ユーザー名の変更、ユーザー切り替え、バージョン情報)
+- [x] 完了サマリー画面(その日の種目数・セット数・負荷量・更新した自己ベスト・種目別の記録)
+- [x] NAS同期の土台(全テーブルの`updated_at`・論理削除`deleted_at`、削除の伝播と読み出しフィルタ)
+- [x] NAS上の同期用APIサーバー(`server/`。Express + SQLite、`POST /sync`で
+      Last Write Winsの差分同期、Docker対応)
+- [x] アプリ側の同期処理(起動時・記録終了時・手動。オフライン時は次の機会にやり直す)
+- [x] 設定画面のNAS接続設定(接続先の変更・今すぐ同期・最終同期日時)
+- [x] NAS上のMetroによる、PCなしでの利用(Tailscale経由で外出先からも)
+- [x] GitHub Issue運用・CI・mainマージ時のNASへの自動デプロイ
+- [ ] `src/native/RestTimerActivity.ts` はJS側インターフェースのみ。実際に
+      Dynamic Islandへ表示するには、Swiftで書いたLive Activities(ActivityKit)の
+      ネイティブモジュールを別途実装し、Expo Config Pluginまたは`expo prebuild`で
+      生成されるiOSプロジェクトに組み込む必要がある
+- [ ] デザイン調整(文字サイズなど)
+
+## Git / GitHub
+
+- リポジトリは `work-out-app` という名前でGitHubに登録済み(public)
+- SSH鍵を`ed25519`で作成し、GitHubに登録して認証(`ssh -T git@github.com`で確認可能)
+- `.gitignore`で`node_modules/`・`.expo/`・`ios/`・`android/`などを除外済み
+- `gh`(GitHub CLI)を使うとIssueとPRの操作ができる(`winget install GitHub.cli`)
+
 ## ドキュメントの置き場所
 
 迷ったときの判断基準。**同じことを2箇所に書かない。**
