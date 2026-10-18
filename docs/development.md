@@ -34,6 +34,27 @@ Issueを立てる → ブランチを切る → 実装 → PR → CI → Squash 
 やることはIssueだけで管理する。READMEや仕様書に「次にやること」を書かない
 (二重管理になり、片方が必ず古くなるため)。
 
+## Claudeに任せる(@claude)
+
+Issueの本文・タイトル・コメント、またはPRのレビューコメントに`@claude`と書くと、
+GitHub上でClaude(`.github/workflows/claude.yml`)が動く。
+
+- **Issueで頼む** — 例: 「@claude この改善を実装して」。Claudeがブランチを切って実装・pushし、
+  PRを作るためのリンクをIssueにコメントする。リンクからPRを作るとCIが走る
+- **PRで頼む** — レビューコメントに「@claude ここを直して」と書くと、そのPRのブランチに修正をpushする
+- 反応するのはリポジトリのオーナー・共同編集者の書き込みだけ
+- GitHub上のClaudeはNASやiPhoneには触れない。実機での確認は手元で行う
+- PRのマージは今までどおり自分で行う(mainのルールでPR・CIが必須になっている)
+
+### 初回のセットアップ
+
+1. リポジトリに[Claude GitHub App](https://github.com/apps/claude)をインストールする
+2. 手元のターミナルで`claude setup-token`を実行し、表示されたトークンをリポジトリの
+   Settings → Secrets and variables → Actions に`CLAUDE_CODE_OAUTH_TOKEN`という名前で登録する
+
+(Claude Codeの`/install-github-app`コマンドでも1と2をまとめて設定できる。その場合は
+ワークフローのPRも作られるが、`claude.yml`は既にあるので閉じてよい)
+
 ## コミット規約
 
 ```

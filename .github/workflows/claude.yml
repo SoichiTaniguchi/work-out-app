@@ -1,0 +1,56 @@
+name: Claude Code
+
+# Issue・PRに「@claude」と書くと、GitHub上でClaudeが動いて対応する。
+# 例: Issueの本文やコメントに「@claude これを実装して」と書く
+#   → Claudeがブランチを切って実装・push し、PRを作るためのリンクをコメントする
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    # @claude を含むときだけ動かす。リポジトリのオーナーまたは共同編集者の書き込みに限る
+    if: |
+      (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      ) && contains(fromJSON('["OWNER", "COLLABORATOR"]'),
+        github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association)
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # PRのCI結果を読むために必要
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Claudeのサブスクリプション(Pro/Max)で認証する。`claude setup-token` で発行した値を
+          # リポジトリのシークレット CLAUDE_CODE_OAUTH_TOKEN に登録しておく。
+          # APIキーを使う場合はこの行を anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }} に置き換える
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --allowedTools "Bash(npm ci),Bash(npx tsc --noEmit),Bash(cd server && npm ci),Bash(cd server && npm run typecheck),Bash(cd server && npm test)"
+            --append-system-prompt "ブランチ名・コミット・PRの規約は docs/development.md に従うこと。コミットとPRの前に、アプリの型チェック(npx tsc --noEmit)と、server/ を変更した場合はサーバーの型チェックとテストを通すこと。"
