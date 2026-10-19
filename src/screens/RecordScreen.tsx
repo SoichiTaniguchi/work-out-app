@@ -28,7 +28,6 @@ import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
 import { scheduleRestEndNotification, cancelRestEndNotification } from "@/timers/restTimer";
 import { FIELD_CONFIG, PR_LABELS } from "@/constants/recordFields";
-import { formatSetSummary, formatDate } from "@/utils/recordFormat";
 import { startOfTodayIso } from "@/utils/dateRange";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Record">;
@@ -41,6 +40,33 @@ interface SetRowState {
   done: boolean;
   // 今日の記録から復元した行。空欄は「記録されていない項目」なので前回値で埋めない。
   recorded?: boolean;
+  // 前回値で埋めただけで、まだ触っていない行。入力扱いにしない(未完了表示・離脱警告・記録対象外)。
+  prefilled?: boolean;
+}
+
+function toValues(set: SetLog | undefined, fields: RecordFieldType[]): SetRowState["values"] {
+  const values: SetRowState["values"] = {};
+  if (!set) return values;
+  for (const field of fields) {
+    const value = set[FIELD_CONFIG[field].key];
+    if (value !== undefined) values[field] = String(value);
+  }
+  return values;
+}
+
+// 前回の同じセット番号の値、無ければ直前のセットの値で埋めた行を作る
+function buildPrefilledRow(
+  index: number,
+  last: WorkoutLog | null,
+  fields: RecordFieldType[],
+  previousRow?: SetRowState
+): SetRowState {
+  const values = last?.sets[index]
+    ? toValues(last.sets[index], fields)
+    : previousRow
+      ? { ...previousRow.values }
+      : {};
+  return { values, done: false, prefilled: Object.keys(values).length > 0 };
 }
 
 export default function RecordScreen({ navigation, route }: Props) {
@@ -86,10 +112,17 @@ export default function RecordScreen({ navigation, route }: Props) {
           done: true,
           recorded: true,
         }));
-        setSets([...recorded, { values: {}, done: false }]);
+        setSets([
+          ...recorded,
+          buildPrefilledRow(recorded.length, last, ex?.fieldDefinition ?? [], recorded[recorded.length - 1]),
+        ]);
       } else {
         const initialCount = last ? last.sets.length : DEFAULT_SET_COUNT;
-        setSets(Array.from({ length: initialCount }, () => ({ values: {}, done: false })));
+        const rows: SetRowState[] = [];
+        for (let i = 0; i < initialCount; i++) {
+          rows.push(buildPrefilledRow(i, last, ex?.fieldDefinition ?? [], rows[i - 1]));
+        }
+        setSets(rows);
       }
     })();
   }, [db, exerciseId]);
@@ -149,7 +182,7 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   const setFieldValue = (index: number, field: RecordFieldType, text: string) => {
     setSets((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, values: { ...row.values, [field]: text } } : row))
+      prev.map((row, i) => (i === index ? { ...row, values: { ...row.values, [field]: text }, prefilled: false } : row))
     );
   };
 
@@ -162,7 +195,7 @@ export default function RecordScreen({ navigation, route }: Props) {
         const current = row.values[field];
         const base = current && current.trim() !== "" ? Number(current) : previousValue ?? 0;
         const next = Math.max(0, (Number.isNaN(base) ? 0 : base) + delta);
-        return { ...row, values: { ...row.values, [field]: String(next) } };
+        return { ...row, values: { ...row.values, [field]: String(next) }, prefilled: false };
       })
     );
   };
@@ -170,6 +203,7 @@ export default function RecordScreen({ navigation, route }: Props) {
   // チェック済み、または何か入力されている行を記録対象にする。
   // チェックを忘れたまま完了しても入力が捨てられないようにするため。
   const hasInput = (row: SetRowState) =>
+    !row.prefilled &&
     (exercise?.fieldDefinition ?? []).some((field) => (row.values[field] ?? "").trim() !== "");
 
   const buildSets = (rows: SetRowState[]): SetLog[] => {
@@ -225,7 +259,10 @@ export default function RecordScreen({ navigation, route }: Props) {
   };
 
   const addSet = () => {
-    setSets((prev) => [...prev, { values: {}, done: false }]);
+    setSets((prev) => [
+      ...prev,
+      buildPrefilledRow(prev.length, lastLog, exercise?.fieldDefinition ?? [], prev[prev.length - 1]),
+    ]);
   };
 
   const handleFinish = async () => {
@@ -295,9 +332,6 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   const fields = exercise.fieldDefinition;
   const pendingSetCount = buildSets(sets).length;
-  const lastSummary = lastLog
-    ? `前回(${formatDate(lastLog.date)}): ${lastLog.sets.map((s) => formatSetSummary(s, fields)).join(", ")}`
-    : "前回の記録はありません";
 
   return (
     <KeyboardAvoidingView
@@ -316,8 +350,6 @@ export default function RecordScreen({ navigation, route }: Props) {
           <Text style={styles.historyLinkText}>履歴</Text>
         </Pressable>
       </View>
-
-      <Text style={styles.lastRecord}>{lastSummary}</Text>
 
       <ScrollView
         style={styles.setsScroll}
@@ -424,7 +456,6 @@ const styles = StyleSheet.create({
   historyLinkText: { fontSize: 13, color: colors.link, fontWeight: "600" },
   back: { fontSize: 18, color: colors.textPrimary },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
-  lastRecord: { padding: 14, paddingHorizontal: 20, backgroundColor: colors.surface, fontSize: 12, color: colors.textSecondary },
   setsScroll: { flex: 1 },
   sets: { padding: 20, gap: 10 },
   setHeaderRow: { flexDirection: "row", gap: 8 },
