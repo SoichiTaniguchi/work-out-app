@@ -251,7 +251,12 @@ export default function RecordScreen({ navigation, route }: Props) {
   };
 
   const completeSet = async (index: number) => {
-    if (sets[index]?.done) return;
+    // チェック済みの行を押したらチェックを外して編集できる状態に戻す。
+    // 内容は入力ありの行として扱われ、完了ボタン・離脱時の確認から保存し直せる。
+    if (sets[index]?.done) {
+      setSets((prev) => prev.map((row, i) => (i === index ? { ...row, done: false } : row)));
+      return;
+    }
     const nextSets = sets.map((row, i) => (i === index ? { ...row, done: true } : row));
     setSets(nextSets);
     await persist(nextSets);
