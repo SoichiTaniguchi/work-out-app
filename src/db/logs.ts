@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import type { RecordFieldType, SetLog, WorkoutLog } from "@/types";
 import { generateId } from "@/db/id";
 import { nowIso } from "@/db/timestamps";
+import { dayRangeIso, localDateKey, monthRangeIso } from "@/utils/dateRange";
 
 interface WorkoutLogRow {
   id: string;
@@ -127,6 +128,68 @@ export async function getWorkoutLogSince(
     [exerciseId, sinceIso]
   );
   return row ? rowToWorkoutLog(db, row) : null;
+}
+
+// 指定した日(ローカル0時〜翌0時)の、その種目の記録。過去日の記録画面で使う。
+export async function getWorkoutLogOnDay(
+  db: SQLiteDatabase,
+  exerciseId: string,
+  day: Date
+): Promise<WorkoutLog | null> {
+  const { startIso, endIso } = dayRangeIso(day);
+  const row = await db.getFirstAsync<WorkoutLogRow>(
+    `SELECT * FROM workout_logs
+     WHERE exercise_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
+     ORDER BY date DESC LIMIT 1;`,
+    [exerciseId, startIso, endIso]
+  );
+  return row ? rowToWorkoutLog(db, row) : null;
+}
+
+// 指定した日の全種目の記録。日別の一覧表示用で、記録が無い日は空配列になる。
+export async function listWorkoutLogsOnDay(
+  db: SQLiteDatabase,
+  userId: string,
+  day: Date
+): Promise<WorkoutLogWithExercise[]> {
+  const { startIso, endIso } = dayRangeIso(day);
+  const rows = await db.getAllAsync<
+    WorkoutLogRow & { exercise_name: string; field_definition: string }
+  >(
+    `SELECT wl.*, e.name as exercise_name, e.field_definition as field_definition
+     FROM workout_logs wl
+     INNER JOIN exercises e ON e.id = wl.exercise_id AND e.deleted_at IS NULL
+     WHERE e.user_id = ? AND wl.date >= ? AND wl.date < ? AND wl.deleted_at IS NULL
+     ORDER BY wl.date ASC;`,
+    [userId, startIso, endIso]
+  );
+
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...(await rowToWorkoutLog(db, row)),
+      exerciseName: row.exercise_name,
+      fieldDefinition: JSON.parse(row.field_definition) as RecordFieldType[],
+    }))
+  );
+}
+
+// 指定した月(month は 0 始まり)に記録がある日のキー(YYYY-MM-DD, ローカル日付)。
+// カレンダーのドット表示用。記録が1件もない月は空配列になる。
+export async function listLoggedDaysInMonth(
+  db: SQLiteDatabase,
+  userId: string,
+  year: number,
+  month: number
+): Promise<string[]> {
+  const { startIso, endIso } = monthRangeIso(year, month);
+  const rows = await db.getAllAsync<{ date: string }>(
+    `SELECT wl.date as date
+     FROM workout_logs wl
+     INNER JOIN exercises e ON e.id = wl.exercise_id AND e.deleted_at IS NULL
+     WHERE e.user_id = ? AND wl.date >= ? AND wl.date < ? AND wl.deleted_at IS NULL;`,
+    [userId, startIso, endIso]
+  );
+  return [...new Set(rows.map((row) => localDateKey(new Date(row.date))))].sort();
 }
 
 // 「この種目を完了」を押したときだけ立てる。セット単位の保存では変更しない。
