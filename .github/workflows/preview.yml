@@ -3,6 +3,7 @@ name: Preview on NAS
 # マージ前にPRのブランチをiPhoneで試すため、NASの8082番にMetroをもう1つ立てる。
 #   PRに「/preview」とコメント      → そのPRを配信する(配信中の別のPRは止まる)
 #   PRに「/preview stop」とコメント → 止める
+#   アプリが変わるPRを開く           → 自動で配信する(docsやCIだけのPRでは今の配信を入れ替えない)
 # 配信中のPRにpushすると自動で入れ替わり、PRを閉じる(マージを含む)と止まる。
 #
 # issue_comment と pull_request_target は、PR側ではなくmainのワークフローで動く。
@@ -11,7 +12,7 @@ on:
   issue_comment:
     types: [created]
   pull_request_target:
-    types: [synchronize, closed]
+    types: [opened, reopened, synchronize, closed]
 
 concurrency:
   group: preview-nas
@@ -19,6 +20,8 @@ concurrency:
 
 env:
   PREVIEW_URL: exp://100.98.40.63:8082
+  # PRを開いたとき、これに当たるファイルを変えていれば自動で配信する(アプリのバンドルに関わるもの)
+  APP_PATHS: ^(src/|assets/|App\.tsx$|app\.json$|package(-lock)?\.json$|babel\.config\.js$|metro\.config\.js$)
 
 jobs:
   resolve:
@@ -53,8 +56,14 @@ jobs:
             esac
           elif [ "$EVENT_ACTION" = closed ]; then
             action=stop-pr
-          else
+          elif [ "$EVENT_ACTION" = synchronize ]; then
             action=update
+          elif files="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')" &&
+            grep -qE "$APP_PATHS" <<<"$files"; then
+            action=start
+          else
+            echo "アプリのファイルを変えていないので自動では配信しない"
+            action=none
           fi
 
           sha=""
@@ -62,7 +71,7 @@ jobs:
             read -r sha head_repo < <(gh api "repos/$REPO/pulls/$PR" --jq '"\(.head.sha) \(.head.repo.full_name)"')
             if [ "$head_repo" != "$REPO" ]; then
               echo "::warning::フォーク($head_repo)からのPRはNASで配信しない"
-              if [ "$action" = start ]; then exit 1; fi
+              if [ "$EVENT" = issue_comment ]; then exit 1; fi
               action=none
             fi
           fi
@@ -103,11 +112,11 @@ jobs:
   report:
     name: PRに結果をコメント
     needs: [resolve, nas]
-    # コメントで頼まれたときは必ず返事をする。自動の入れ替えは成否を知らせ、何もしなかったときは黙る
+    # コメントで頼まれたときは必ず返事をする。自動の配信・入れ替えは成否を知らせ、何もしなかったときは黙る
     if: >-
       always() && needs.resolve.result != 'skipped' && needs.resolve.outputs.action != 'none' &&
       (github.event_name == 'issue_comment' ||
-       (needs.resolve.outputs.action == 'update' && needs.nas.outputs.result != 'skipped'))
+       (needs.resolve.outputs.action != 'stop-pr' && needs.nas.outputs.result != 'skipped'))
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

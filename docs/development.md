@@ -15,7 +15,8 @@ Issueを立てる → ブランチを切る → 実装 → PR → CI → (/previ
 2. **着手するときにブランチを切る** — `feature/<内容>` または `fix/<内容>`
 3. **Pull Requestを出す** — mainへ直接pushしない
 4. **CIが自動で走る** — アプリの型チェックと、サーバーのテスト
-5. **実機で試す** — PRに`/preview`とコメントすると、iPhoneから試せる([マージ前に試す](#マージ前に試すpreview))
+5. **実機で試す** — アプリが変わるPRは自動で、それ以外は`/preview`とコメントすると、
+   iPhoneから試せる([マージ前に試す](#マージ前に試すpreview))
 6. **Squash and mergeする** — マージするとNASへ自動デプロイされる
 
 ## Issue
@@ -152,8 +153,9 @@ cd server && npm run typecheck && npm test
 
 ## マージ前に試す(/preview)
 
-PRに**`/preview`**とコメントすると、そのPRのブランチがNASの8082番から配信される
-(`.github/workflows/preview.yml`)。準備ができるとPRに返信が付くので、Expo Goで次を開く。
+**アプリが変わるPRを開くと**(Claudeが作ったPRも含む)、そのPRのブランチがNASの8082番から
+自動で配信される(`.github/workflows/preview.yml`)。準備ができるとPRに返信が付くので、
+Expo Goで次を開く。
 
 ```
 exp://100.98.40.63:8082
@@ -163,11 +165,15 @@ exp://100.98.40.63:8082
 
 | 操作 | 動き |
 | --- | --- |
-| PRに`/preview`とコメント | そのPRを配信する。別のPRを配信中ならそちらは止まる |
+| アプリが変わるPRを開く | 自動で配信する。別のPRを配信中ならそちらは止まる |
+| PRに`/preview`とコメント | 手動で配信する(自動の対象外のPRや、前のPRに戻したいとき) |
 | 配信中のPRにpush(`@claude`の修正も含む) | 自動で入れ替わり、PRに返信が付く |
 | PRに`/preview stop`とコメント | 止める |
 | PRを閉じる・マージする | 自動で止まる |
 
+- 「アプリが変わる」は変更したファイルで判定する。`src/`・`assets/`・`App.tsx`・`app.json`・
+  `package.json`・`package-lock.json`・`babel.config.js`・`metro.config.js`のどれかを変えたPRが対象。
+  `docs/`・`.github/`・`scripts/`・`server/`だけのPRでは、配信中のプレビューを入れ替えない
 - 同時に配信できるのは1本だけ。NASのメモリ(1.7GB)に余裕がないため、プレビューのMetroには
   上限(768MB)を付けて、膨らんでも本番を巻き込まずにプレビューだけが落ちるようにしてある
 - `package-lock.json`がmainと同じなら本番の`node_modules`を読み取り専用で使い回すので、
