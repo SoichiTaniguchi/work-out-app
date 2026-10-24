@@ -8,8 +8,15 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import type { Exercise } from "@/types";
 import { useFolderExercises } from "@/hooks/useFolderExercises";
 import { getFolder } from "@/db/folders";
-import { listWorkoutLogsSince, markWorkoutLogCompleted } from "@/db/logs";
-import { startOfTodayIso } from "@/utils/dateRange";
+import {
+  getLastWorkoutLog,
+  listWorkoutLogsOnDay,
+  listWorkoutLogsSince,
+  markWorkoutLogCompleted,
+} from "@/db/logs";
+import CollapsibleCalendar from "@/components/CollapsibleCalendar";
+import { dayRangeIso, formatDateLabel, startOfTodayIso, todayKey } from "@/utils/dateRange";
+import { formatDate, formatSetSummary } from "@/utils/recordFormat";
 import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ExerciseList">;
@@ -25,38 +32,69 @@ const FIELD_LABELS: Record<string, string> = {
 export default function ExerciseListScreen({ navigation, route }: Props) {
   const { folderId } = route.params;
   const db = useSQLiteContext();
+  // 記録する日。ホームで選んだ日を引き継ぎ、ここでも週表示で切り替えられる。
+  const [dateKey, setDateKey] = useState(route.params.date ?? todayKey());
+  const isToday = dateKey === todayKey();
   const [folderName, setFolderName] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
-  const [todayStatus, setTodayStatus] = useState<
-    Record<string, { sets: number; completed: boolean }>
+  const [dayStatus, setDayStatus] = useState<
+    Record<string, { sets: number; completed: boolean; summary: string }>
   >({});
+  // 記録がない種目の参考表示用に、選択日より前の最新の記録
+  const [previous, setPrevious] = useState<Record<string, string>>({});
   const { exercises, reload, reorder, deletePermanently } = useFolderExercises(folderId);
 
-  const reloadToday = useCallback(async () => {
+  const reloadDay = useCallback(async () => {
     if (!userId) return;
-    const logs = await listWorkoutLogsSince(db, userId, startOfTodayIso());
-    const status: Record<string, { sets: number; completed: boolean }> = {};
+    const logs = await listWorkoutLogsOnDay(db, userId, dateKey);
+    const status: Record<string, { sets: number; completed: boolean; summary: string }> = {};
     for (const log of logs) {
       const current = status[log.exerciseId];
+      const summary = log.sets.map((set) => formatSetSummary(set, log.fieldDefinition)).join(" / ");
       status[log.exerciseId] = {
         sets: (current?.sets ?? 0) + log.sets.length,
         completed: (current?.completed ?? false) || log.completed,
+        summary: current ? current.summary + " / " + summary : summary,
       };
     }
-    setTodayStatus(status);
-  }, [db, userId]);
+    setDayStatus(status);
+  }, [db, userId, dateKey]);
 
   useEffect(() => {
-    reloadToday();
-  }, [reloadToday]);
+    reloadDay();
+  }, [reloadDay]);
+
+  // 前回の日付と最初のセットを参考表示する。選んだ日より前の記録だけを見る。
+  useEffect(() => {
+    const dayStart = dayRangeIso(dateKey).startIso;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        exercises.map(async (exercise) => {
+          const last = await getLastWorkoutLog(db, exercise.id, dayStart);
+          const first = last?.sets[0];
+          return [
+            exercise.id,
+            last && first
+              ? "前回 " + formatDate(last.date) + " " + formatSetSummary(first, exercise.fieldDefinition)
+              : "",
+          ] as const;
+        })
+      );
+      if (!cancelled) setPrevious(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, exercises, dateKey]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       reload();
-      reloadToday();
+      reloadDay();
     });
     return unsubscribe;
-  }, [navigation, reload, reloadToday]);
+  }, [navigation, reload, reloadDay]);
 
   useEffect(() => {
     getFolder(db, folderId).then((folder) => {
@@ -89,7 +127,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
             for (const log of pending) {
               await markWorkoutLogCompleted(db, log.id);
             }
-            await reloadToday();
+            await reloadDay();
             navigation.navigate("Summary", { userId });
             void runSyncQuietly(db, userId);
           },
@@ -106,7 +144,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
   };
 
   const renderItem = ({ item, drag, isActive }: RenderItemParams<Exercise>) => {
-    const status = todayStatus[item.id];
+    const status = dayStatus[item.id];
     const done = status?.completed ?? false;
     const inProgress = !!status && !done;
     return (
@@ -117,7 +155,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         inProgress && styles.rowInProgress,
         done && styles.rowDone,
       ]}
-      onPress={() => navigation.navigate("Record", { exerciseId: item.id })}
+      onPress={() => navigation.navigate("Record", { exerciseId: item.id, date: dateKey })}
     >
       <Pressable onPressIn={drag} hitSlop={8}>
         <Text style={styles.handle}>≡</Text>
@@ -136,13 +174,13 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         <Text
           style={[styles.last, inProgress && styles.lastInProgress, done && styles.lastDone]}
         >
-          {done
-            ? `今日 ${status!.sets}セット完了(タップで追加)`
-            : inProgress
-              ? `今日 ${status!.sets}セット記録中(タップで続ける)`
-              : `記録項目: ${item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}`}
+          {status
+            ? `${status.sets}セット${done ? "完了" : "記録中"}: ${status.summary}`
+            : previous[item.id] ||
+              `記録項目: ${item.fieldDefinition.map((f) => FIELD_LABELS[f]).join(" × ")}`}
         </Text>
       </View>
+      {!status && <Text style={styles.plus}>＋</Text>}
       <Pressable
         style={styles.iconButton}
         hitSlop={8}
@@ -170,8 +208,21 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
         </Pressable>
-        <Text style={styles.title}>{folderName}</Text>
+        <View>
+          <Text style={styles.title}>{folderName}</Text>
+          <Text style={styles.dateHeading}>{formatDateLabel(dateKey)}の記録</Text>
+        </View>
       </View>
+      {userId && (
+        <View style={styles.calendar}>
+          <CollapsibleCalendar
+            userId={userId}
+            selected={dateKey}
+            onSelect={setDateKey}
+            expandable={false}
+          />
+        </View>
+      )}
 
       <DraggableFlatList
         contentContainerStyle={styles.list}
@@ -189,7 +240,7 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
               <Text style={styles.addText}>+ 種目を追加</Text>
             </Pressable>
 
-            {userId && (
+            {userId && isToday && (
               <Pressable style={styles.finishRow} onPress={finishWorkout}>
                 <Text style={styles.finishText}>今日のトレーニングを終了</Text>
               </Pressable>
@@ -214,6 +265,9 @@ const styles = StyleSheet.create({
   },
   back: { fontSize: 18, color: colors.textPrimary },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
+  dateHeading: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  calendar: { paddingHorizontal: 20, paddingTop: 12 },
+  plus: { fontSize: 20, color: colors.link, paddingHorizontal: 4 },
   list: { padding: 20, gap: 10 },
   row: {
     flexDirection: "row",

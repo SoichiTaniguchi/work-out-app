@@ -13,7 +13,8 @@ import {
   type LatestPersonalRecord,
 } from "@/db/stats";
 import { PR_LABELS } from "@/constants/recordFields";
-import { startOfWeekIso } from "@/utils/dateRange";
+import CollapsibleCalendar from "@/components/CollapsibleCalendar";
+import { formatDateLabel, startOfWeekIso, todayKey } from "@/utils/dateRange";
 import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
@@ -27,6 +28,8 @@ export default function HomeScreen({ navigation, route }: Props) {
   const { userId } = route.params;
   const db = useSQLiteContext();
 
+  // 記録する日。プログラム → 種目一覧 → 記録の各画面へ引き継ぐ。
+  const [selectedDate, setSelectedDate] = useState(todayKey());
   const [userName, setUserName] = useState("");
   const [summaries, setSummaries] = useState<FolderSummary[]>([]);
   const [weekly, setWeekly] = useState<WorkoutStats>({ exerciseCount: 0, volume: 0 });
@@ -78,7 +81,9 @@ export default function HomeScreen({ navigation, route }: Props) {
         </Pressable>
       </View>
 
-      <Text style={styles.sectionTitle}>プログラム</Text>
+      <CollapsibleCalendar userId={userId} selected={selectedDate} onSelect={setSelectedDate} />
+
+      <Text style={styles.sectionTitle}>{formatDateLabel(selectedDate)}の記録 — プログラムを選ぶ</Text>
       {summaries.length === 0 ? (
         <Pressable
           style={styles.emptyCard}
@@ -92,7 +97,9 @@ export default function HomeScreen({ navigation, route }: Props) {
           <Pressable
             key={folder.id}
             style={styles.card}
-            onPress={() => navigation.navigate("ExerciseList", { folderId: folder.id })}
+            onPress={() =>
+              navigation.navigate("ExerciseList", { folderId: folder.id, date: selectedDate })
+            }
           >
             <Text style={styles.cardTitle}>{folder.name}</Text>
             <Text style={styles.cardDesc}>
