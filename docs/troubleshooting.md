@@ -106,7 +106,7 @@ Windowsの共有フォルダ経由(`Copy-Item ... \\192.168.0.20\docker\`)でも
 | npmが`/.npm`に書けないと言う | コンテナ内にそのuidのホームが無い。`HOME`を書き込める場所に指定する |
 | 「ログインしますか」のプロンプトが延々ループする | バックグラウンドのコンテナでは選択できない。`CI=1`で非対話にする |
 | `.expo`へのrenameが`ENOENT`で失敗する | NAS共有フォルダのACLと相性が悪い。`HOME=/tmp`でコンテナ内部に逃がす |
-| Expo Goで`not signed in to Expo CLI` | iPhoneのExpo Goがログイン済みなのにNAS側のCLIが匿名。Expo Goからログアウトするか、[アクセストークン](https://expo.dev/settings/access-tokens)を作って`-e EXPO_TOKEN=...`を渡す |
+| Expo Goで`not signed in to Expo CLI` | iPhoneのExpo Goがログイン済みなのにNAS側のCLIが匿名。Expo Goからログアウトするか、[アクセストークン](https://expo.dev/settings/access-tokens)を作って`-e EXPO_TOKEN=...`を渡す。プレビュー(8082番)は本番のMetroコンテナ(`workout-metro`)の`EXPO_TOKEN`を引き継ぐので、本番に渡してあればよい |
 
 ## iPhoneでQRコード読み取り後、`http://127.0.0.1:8081/...`が開けない
 

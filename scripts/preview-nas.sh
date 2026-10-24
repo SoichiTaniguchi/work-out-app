@@ -17,6 +17,7 @@ DOCKER="${DOCKER:-docker}"
 NODE_IMAGE="${NODE_IMAGE:-node:20-bookworm-slim}"
 MAIN_DIR="${MAIN_DIR:-/volume1/docker/work-out-app}"
 CONTAINER="${PREVIEW_CONTAINER:-workout-metro-preview}"
+MAIN_CONTAINER="${METRO_CONTAINER:-workout-metro}"
 VOLUME="${PREVIEW_VOLUME:-workout-metro-preview}"
 PORT="${PREVIEW_PORT:-8082}"
 PACKAGER_HOSTNAME="${PACKAGER_HOSTNAME:-100.98.40.63}"
@@ -75,6 +76,19 @@ start() {
       fi'
   fi
 
+  # Expo Goがログイン済みだと、CLI側もログインしていないと開けない(docs/troubleshooting.md)。
+  # トークンはGitHubに置かず、本番のMetroに渡してあるものを引き継ぐ。
+  # コマンドラインに値が出ないよう、環境変数として渡す。
+  local token_env=()
+  EXPO_TOKEN="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$MAIN_CONTAINER" 2>/dev/null |
+    sed -n 's/^EXPO_TOKEN=//p')" || true
+  if [ -n "$EXPO_TOKEN" ]; then
+    export EXPO_TOKEN
+    token_env=(-e EXPO_TOKEN)
+  else
+    log "warning: $MAIN_CONTAINER has no EXPO_TOKEN; Expo Go signed in to an account cannot open the preview"
+  fi
+
   # 引数と環境変数は本番のMetroに揃えている(理由は docs/development.md)
   log "start Metro for PR $PR on port $PORT"
   $DOCKER run -dit --name "$CONTAINER" --network host \
@@ -84,6 +98,7 @@ start() {
     -e HOME=/tmp \
     -e CI=1 \
     -e REACT_NATIVE_PACKAGER_HOSTNAME="$PACKAGER_HOSTNAME" \
+    "${token_env[@]}" \
     "$NODE_IMAGE" npx expo start --go --port "$PORT" --max-workers 1 >/dev/null
 
   wait_for "preview metro" "http://localhost:$PORT/status" 60
