@@ -29,13 +29,14 @@ React Native (Expo) 製のiOSアプリ。
 - 大きな機能追加は`feature/<内容>`、修正は`fix/<内容>`という名前でブランチを切ってから着手する。
 - **mainへ直接pushしない。必ずPull Requestを出し、ユーザーが確認してからマージする。**
   mainが更新されるとNASへ自動デプロイされるため、未確認のコードが流れないようにする。
-- **マージはSquash and merge。PR 1本がmainの1コミットになる。**
-  そのため**PRは小さく1目的に保ち、大きな機能は複数のPRに分ける**。1ブランチに多数の
-  コミットを積む作り方はしない(squashで区切りが消えるため)。
+- **PRは機能1つにつき1本。** PR内のコミットは複数あってよい(1コミット1意図に保つ)。
+  マージはSquash and mergeで、PR全体がmainの1コミットになる。PRのタイトルと説明が、
+  mainに残る要点になるので丁寧に書く。
 - **コミットの件名とPRのタイトルは`<type>(<scope>): <subject>`の形式で、英語で書く。**
   type・scope・subjectの一覧と書き方は`docs/development.md`の「コミット規約」に従う。
   **本文は日本語**で、「なぜそうしたか」を書く。
-- 作業の起点はGitHub Issue。コミットの件名末尾に`(#12)`を付け、そのIssueを完了させる
+- 作業の起点はGitHub Issue。Issueに`@claude`で頼めば、Claudeがブランチを切って実装し、
+  PRの作成まで行ってよい。コミットの件名末尾に`(#12)`を付け、そのIssueを完了させる
   コミットの本文に`Closes #12`を書く。**PRのタイトルには番号を付けない**
   (squash時にGitHubが`(#PR番号)`を足すため二重になる)。
 - `npm audit fix --force`は実行しない(Expo/React Navigation関連のバージョンが壊れる原因になるため)。
