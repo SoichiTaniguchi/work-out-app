@@ -13,7 +13,8 @@ import {
   type LatestPersonalRecord,
 } from "@/db/stats";
 import { PR_LABELS } from "@/constants/recordFields";
-import { startOfWeekIso } from "@/utils/dateRange";
+import CollapsibleCalendar from "@/components/CollapsibleCalendar";
+import { formatDateLabel, startOfWeekIso, todayKey } from "@/utils/dateRange";
 import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
@@ -27,6 +28,8 @@ export default function HomeScreen({ navigation, route }: Props) {
   const { userId } = route.params;
   const db = useSQLiteContext();
 
+  // 記録する日。プログラム → 種目一覧 → 記録の各画面へ引き継ぐ。
+  const [selectedDate, setSelectedDate] = useState(todayKey());
   const [userName, setUserName] = useState("");
   const [summaries, setSummaries] = useState<FolderSummary[]>([]);
   const [weekly, setWeekly] = useState<WorkoutStats>({ exerciseCount: 0, volume: 0 });
@@ -67,73 +70,84 @@ export default function HomeScreen({ navigation, route }: Props) {
   }, [db, userId, reload]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>こんにちは</Text>
-          <Text style={styles.userName}>{userName}さん</Text>
-        </View>
-        <Pressable onPress={() => navigation.navigate("Settings", { userId })}>
-          <View style={styles.iconBox} />
-        </Pressable>
-      </View>
-
-      <Text style={styles.sectionTitle}>プログラム</Text>
-      {summaries.length === 0 ? (
-        <Pressable
-          style={styles.emptyCard}
-          onPress={() => navigation.navigate("FolderEdit", { userId })}
-        >
-          <Text style={styles.emptyTitle}>プログラムがまだありません</Text>
-          <Text style={styles.emptyDesc}>+ 最初のプログラムを作成する</Text>
-        </Pressable>
-      ) : (
-        summaries.map(({ folder, exerciseCount, exerciseNames }) => (
-          <Pressable
-            key={folder.id}
-            style={styles.card}
-            onPress={() => navigation.navigate("ExerciseList", { folderId: folder.id })}
-          >
-            <Text style={styles.cardTitle}>{folder.name}</Text>
-            <Text style={styles.cardDesc}>
-              {exerciseCount === 0
-                ? "種目がまだ登録されていません"
-                : `${exerciseNames.slice(0, 3).join("・")}${exerciseCount > 3 ? ` 他${exerciseCount - 3}種目` : ""}`}
-            </Text>
+    <View style={styles.container}>
+      {/* ヘッダーとカレンダーは固定し、プログラム以下だけをスクロールさせる */}
+      <View style={styles.fixedArea}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>こんにちは</Text>
+            <Text style={styles.userName}>{userName}さん</Text>
+          </View>
+          <Pressable onPress={() => navigation.navigate("Settings", { userId })}>
+            <View style={styles.iconBox} />
           </Pressable>
-        ))
-      )}
-
-      <Pressable
-        style={styles.manageLink}
-        onPress={() => navigation.navigate("FolderList", { userId })}
-      >
-        <Text style={styles.manageLinkText}>プログラム/種目を管理 ›</Text>
-      </Pressable>
-
-      <View style={styles.row}>
-        <View style={[styles.smallCard, { flex: 1 }]}>
-          <Text style={styles.cardLabel}>自己ベスト更新</Text>
-          <Text style={styles.smallCardValue}>
-            {latestPr ? `${latestPr.exerciseName} ${formatPrValue(latestPr)}` : "-"}
-          </Text>
-          {latestPr && <Text style={styles.smallCardSub}>{PR_LABELS[latestPr.type]}</Text>}
         </View>
-        <View style={[styles.smallCard, { flex: 1 }]}>
-          <Text style={styles.cardLabel}>今週の記録</Text>
-          <Text style={styles.smallCardValue}>{weekly.exerciseCount} 種目</Text>
-          <Text style={styles.smallCardSub}>
-            負荷量 {weekly.volume.toLocaleString()}kg
-          </Text>
-        </View>
+
+        <CollapsibleCalendar userId={userId} selected={selectedDate} onSelect={setSelectedDate} />
       </View>
-    </ScrollView>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <Text style={styles.sectionTitle}>{formatDateLabel(selectedDate)}の記録 — プログラムを選ぶ</Text>
+        {summaries.length === 0 ? (
+          <Pressable
+            style={styles.emptyCard}
+            onPress={() => navigation.navigate("FolderEdit", { userId })}
+          >
+            <Text style={styles.emptyTitle}>プログラムがまだありません</Text>
+            <Text style={styles.emptyDesc}>+ 最初のプログラムを作成する</Text>
+          </Pressable>
+        ) : (
+          summaries.map(({ folder, exerciseCount, exerciseNames }) => (
+            <Pressable
+              key={folder.id}
+              style={styles.card}
+              onPress={() =>
+                navigation.navigate("ExerciseList", { folderId: folder.id, date: selectedDate })
+              }
+            >
+              <Text style={styles.cardTitle}>{folder.name}</Text>
+              <Text style={styles.cardDesc}>
+                {exerciseCount === 0
+                  ? "種目がまだ登録されていません"
+                  : `${exerciseNames.slice(0, 3).join("・")}${exerciseCount > 3 ? ` 他${exerciseCount - 3}種目` : ""}`}
+              </Text>
+            </Pressable>
+          ))
+        )}
+
+        <Pressable
+          style={styles.manageLink}
+          onPress={() => navigation.navigate("FolderList", { userId })}
+        >
+          <Text style={styles.manageLinkText}>プログラム/種目を管理 ›</Text>
+        </Pressable>
+
+        <View style={styles.row}>
+          <View style={[styles.smallCard, { flex: 1 }]}>
+            <Text style={styles.cardLabel}>自己ベスト更新</Text>
+            <Text style={styles.smallCardValue}>
+              {latestPr ? `${latestPr.exerciseName} ${formatPrValue(latestPr)}` : "-"}
+            </Text>
+            {latestPr && <Text style={styles.smallCardSub}>{PR_LABELS[latestPr.type]}</Text>}
+          </View>
+          <View style={[styles.smallCard, { flex: 1 }]}>
+            <Text style={styles.cardLabel}>今週の記録</Text>
+            <Text style={styles.smallCardValue}>{weekly.exerciseCount} 種目</Text>
+            <Text style={styles.smallCardSub}>
+              負荷量 {weekly.volume.toLocaleString()}kg
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingTop: 56, gap: 12 },
+  fixedArea: { paddingHorizontal: 20, paddingTop: 56, gap: 12 },
+  scroll: { flex: 1 },
+  content: { padding: 20, paddingTop: 12, gap: 12 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -19,7 +19,7 @@ import type { Exercise, PersonalRecordType, RecordFieldType, SetLog, WorkoutLog 
 import { getExercise } from "@/db/exercises";
 import {
   getLastWorkoutLog,
-  getWorkoutLogSince,
+  getWorkoutLogOnDay,
   createWorkoutLog,
   replaceWorkoutLogSets,
   markWorkoutLogCompleted,
@@ -28,7 +28,13 @@ import { evaluateAndSavePersonalRecords } from "@/db/personalRecords";
 import { startRestTimerActivity, endRestTimerActivity } from "@/native/RestTimerActivity";
 import { scheduleRestEndNotification, cancelRestEndNotification } from "@/timers/restTimer";
 import { FIELD_CONFIG, PR_LABELS } from "@/constants/recordFields";
-import { startOfTodayIso } from "@/utils/dateRange";
+import {
+  addDays,
+  dayRangeIso,
+  formatDateLabel,
+  recordTimestampIso,
+  todayKey,
+} from "@/utils/dateRange";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Record">;
 
@@ -72,6 +78,9 @@ function buildPrefilledRow(
 export default function RecordScreen({ navigation, route }: Props) {
   const { exerciseId } = route.params;
   const db = useSQLiteContext();
+  // 記録する日("YYYY-MM-DD")。省略時は今日。前日・翌日ボタンで画面内でも切り替えられる。
+  const [dateKey, setDateKey] = useState(route.params.date ?? todayKey());
+  const isToday = dateKey === todayKey();
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [lastLog, setLastLog] = useState<WorkoutLog | null>(null);
@@ -81,28 +90,29 @@ export default function RecordScreen({ navigation, route }: Props) {
   const restIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restEndAtRef = useRef<number | null>(null);
   const notificationIdRef = useRef<string | null>(null);
-  // 今日すでに記録済みならそのレコードに追記する。セット完了ごとに保存するので、
+  // 選択中の日にすでに記録済みならそのレコードに追記する。セット完了ごとに保存するので、
   // 連続でチェックしても二重に作らないよう ref で持つ。
-  const todayLogIdRef = useRef<string | null>(null);
+  const dayLogIdRef = useRef<string | null>(null);
   // 完了ボタン経由の離脱では beforeRemove の確認を出さない
   const leavingAfterSaveRef = useRef(false);
 
   useEffect(() => {
     (async () => {
-      const todayStart = startOfTodayIso();
-      const [ex, last, today] = await Promise.all([
+      // 前回値は「選んだ日より前の最新の記録」。未来の記録は拾わない。
+      const dayStart = dayRangeIso(dateKey).startIso;
+      const [ex, last, dayLog] = await Promise.all([
         getExercise(db, exerciseId),
-        getLastWorkoutLog(db, exerciseId, todayStart),
-        getWorkoutLogSince(db, exerciseId, todayStart),
+        getLastWorkoutLog(db, exerciseId, dayStart),
+        getWorkoutLogOnDay(db, exerciseId, dateKey),
       ]);
 
       setExercise(ex);
       setLastLog(last);
-      todayLogIdRef.current = today?.id ?? null;
+      dayLogIdRef.current = dayLog?.id ?? null;
 
-      if (today) {
-        // 今日の分は完了済みセットとして復元し、続きを入力できるよう空行を1つ足す
-        const recorded: SetRowState[] = today.sets.map((set) => ({
+      if (dayLog) {
+        // その日の分は完了済みセットとして復元し、続きを入力できるよう空行を1つ足す
+        const recorded: SetRowState[] = dayLog.sets.map((set) => ({
           values: Object.fromEntries(
             (ex?.fieldDefinition ?? [])
               .map((field) => [field, set[FIELD_CONFIG[field].key]] as const)
@@ -125,7 +135,7 @@ export default function RecordScreen({ navigation, route }: Props) {
         setSets(rows);
       }
     })();
-  }, [db, exerciseId]);
+  }, [db, exerciseId, dateKey]);
 
   const clearRestTimer = useCallback(() => {
     if (restIntervalRef.current) {
@@ -236,16 +246,17 @@ export default function RecordScreen({ navigation, route }: Props) {
     const resolved = buildSets(rows);
     if (resolved.length === 0) return resolved;
 
-    if (todayLogIdRef.current) {
-      await replaceWorkoutLogSets(db, todayLogIdRef.current, resolved);
+    if (dayLogIdRef.current) {
+      await replaceWorkoutLogSets(db, dayLogIdRef.current, resolved);
     } else {
+      // 今日は現在時刻、過去日はその日の正午で保存する(日付がずれないようにするため)
       const created = await createWorkoutLog(
         db,
         exerciseId,
-        new Date().toISOString(),
+        recordTimestampIso(dateKey),
         resolved
       );
-      todayLogIdRef.current = created.id;
+      dayLogIdRef.current = created.id;
     }
     return resolved;
   };
@@ -282,8 +293,8 @@ export default function RecordScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (todayLogIdRef.current) {
-      await markWorkoutLogCompleted(db, todayLogIdRef.current);
+    if (dayLogIdRef.current) {
+      await markWorkoutLogCompleted(db, dayLogIdRef.current);
     }
     const newRecords = await evaluateAndSavePersonalRecords(db, exerciseId, resolvedSets);
 
@@ -299,6 +310,28 @@ export default function RecordScreen({ navigation, route }: Props) {
 
   // チェック済みの行は即保存されているので、未保存なのは「未チェックだが入力がある」行だけ
   const unsavedRows = sets.filter((row) => !row.done && hasInput(row)).length;
+
+  // 前日・翌日へ移る。未来の日付は選べない。未チェックの入力は引き継げないので確認する。
+  const changeDay = (delta: number) => {
+    const next = addDays(dateKey, delta);
+    if (next > todayKey()) return;
+    const move = () => {
+      clearRestTimer();
+      setDateKey(next);
+    };
+    if (unsavedRows === 0) {
+      move();
+      return;
+    }
+    Alert.alert(
+      "未記録の入力があります",
+      `チェックの入っていないセットが${unsavedRows}件あります。日付を移ると破棄されます。`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        { text: "破棄して移動", style: "destructive", onPress: move },
+      ]
+    );
+  };
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
@@ -353,6 +386,18 @@ export default function RecordScreen({ navigation, route }: Props) {
           onPress={() => navigation.navigate("History", { exerciseId })}
         >
           <Text style={styles.historyLinkText}>履歴</Text>
+        </Pressable>
+      </View>
+
+      <View style={[styles.dateBar, !isToday && styles.dateBarPast]}>
+        <Pressable onPress={() => changeDay(-1)} hitSlop={10}>
+          <Text style={styles.dateArrow}>‹</Text>
+        </Pressable>
+        <Text style={styles.dateLabel}>
+          {formatDateLabel(dateKey)}の記録{isToday ? "" : "(過去)"}
+        </Text>
+        <Pressable onPress={() => changeDay(1)} hitSlop={10} disabled={isToday}>
+          <Text style={[styles.dateArrow, isToday && styles.dateArrowDisabled]}>›</Text>
         </Pressable>
       </View>
 
@@ -461,6 +506,18 @@ const styles = StyleSheet.create({
   historyLinkText: { fontSize: 13, color: colors.link, fontWeight: "600" },
   back: { fontSize: 18, color: colors.textPrimary },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
+  dateBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+  },
+  dateBarPast: { backgroundColor: colors.warning },
+  dateLabel: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+  dateArrow: { fontSize: 24, color: colors.textPrimary, paddingHorizontal: 8 },
+  dateArrowDisabled: { color: colors.textFaint },
   setsScroll: { flex: 1 },
   sets: { padding: 20, gap: 10 },
   setHeaderRow: { flexDirection: "row", gap: 8 },
