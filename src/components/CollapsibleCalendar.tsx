@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, PanResponder, StyleSheet } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import { useIsFocused } from "@react-navigation/native";
 import { colors } from "@/theme/colors";
@@ -80,13 +80,23 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     else onSelect(addDays(selected, delta * 7) > today ? today : addDays(selected, delta * 7));
   };
 
+  // 週表示のとき、カレンダーを左右にスワイプして前後の週へ移動する
+  const swipe = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) =>
+      !expanded && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+    onPanResponderRelease: (_, g) => {
+      if (g.dx < -40) move(1);
+      else if (g.dx > 40) move(-1);
+    },
+  });
+
   const titleMonth = anchor;
   const nextDisabled = expanded
     ? isAfterMonth(shiftMonth(viewMonth, 1), today)
     : weekKeys(selected)[6]! >= today;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} {...swipe.panHandlers}>
       <View style={styles.titleRow}>
         <Pressable onPress={() => move(-1)} hitSlop={10}>
           <Text style={styles.arrow}>‹</Text>
@@ -98,7 +108,7 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
           <Text style={[styles.arrow, nextDisabled && styles.arrowDisabled]}>›</Text>
         </Pressable>
         {expandable && (
-          <Pressable style={styles.toggle} onPress={toggle} hitSlop={10}>
+          <Pressable style={styles.toggle} onPress={toggle} hitSlop={12}>
             <Text style={styles.toggleText}>{expanded ? "▴" : "▾"}</Text>
           </Pressable>
         )}
@@ -170,8 +180,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
   arrow: { fontSize: 20, color: colors.textPrimary, paddingHorizontal: 6 },
   arrowDisabled: { color: colors.textFaint },
-  toggle: { marginLeft: "auto" },
-  toggleText: { fontSize: 18, color: colors.link },
+  toggle: {
+    marginLeft: "auto",
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggleText: { fontSize: 22, lineHeight: 26, color: colors.link },
   weekRow: { flexDirection: "row" },
   weekdayLabel: { flex: 1, textAlign: "center", fontSize: 10, color: colors.textMuted },
   dayCell: { flex: 1, alignItems: "center", paddingVertical: 0 },
