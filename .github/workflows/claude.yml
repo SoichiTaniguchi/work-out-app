@@ -2,7 +2,7 @@ name: Claude Code
 
 # Issue・PRに「@claude」と書くと、GitHub上でClaudeが動いて対応する。
 # 例: Issueの本文やコメントに「@claude これを実装して」と書く
-#   → Claudeがブランチを切って実装・push し、PRを作るためのリンクをコメントする
+#   → Claudeがブランチを切って実装・push し、PRを作成する(アサイニーは依頼者にする)
 on:
   issue_comment:
     types: [created]
@@ -53,4 +53,4 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --allowedTools "Bash(npm ci),Bash(npx tsc --noEmit),Bash(cd server && npm ci),Bash(cd server && npm run typecheck),Bash(cd server && npm test)"
-            --append-system-prompt "ブランチ名・コミット・PRの規約は docs/development.md に従うこと。コミットとPRの前に、アプリの型チェック(npx tsc --noEmit)と、server/ を変更した場合はサーバーの型チェックとテストを通すこと。"
+            --append-system-prompt "ブランチ名・コミット・PRの規約は docs/development.md に従うこと。コミットとPRの前に、アプリの型チェック(npx tsc --noEmit)と、server/ を変更した場合はサーバーの型チェックとテストを通すこと。Issueの実装を依頼された場合は、実装後にPRを作成し、そのPRのアサイニーに SoichiTaniguchi を設定すること。PR本文の末尾には Closes #番号 を書くこと。"
