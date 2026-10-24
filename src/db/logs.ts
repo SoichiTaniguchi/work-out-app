@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import type { RecordFieldType, SetLog, WorkoutLog } from "@/types";
 import { generateId } from "@/db/id";
 import { nowIso } from "@/db/timestamps";
+import { dayRangeIso, localDateKey, monthRangeIso } from "@/utils/dateRange";
 
 interface WorkoutLogRow {
   id: string;
@@ -54,10 +55,11 @@ export interface WorkoutLogWithExercise extends WorkoutLog {
   fieldDefinition: RecordFieldType[];
 }
 
-export async function listWorkoutLogsSince(
+async function listWorkoutLogsBetween(
   db: SQLiteDatabase,
   userId: string,
-  sinceIso: string
+  startIso: string,
+  endIso: string | null
 ): Promise<WorkoutLogWithExercise[]> {
   const rows = await db.getAllAsync<
     WorkoutLogRow & { exercise_name: string; field_definition: string }
@@ -65,9 +67,9 @@ export async function listWorkoutLogsSince(
     `SELECT wl.*, e.name as exercise_name, e.field_definition as field_definition
      FROM workout_logs wl
      INNER JOIN exercises e ON e.id = wl.exercise_id AND e.deleted_at IS NULL
-     WHERE e.user_id = ? AND wl.date >= ? AND wl.deleted_at IS NULL
+     WHERE e.user_id = ? AND wl.date >= ? AND (? IS NULL OR wl.date < ?) AND wl.deleted_at IS NULL
      ORDER BY wl.date ASC;`,
-    [userId, sinceIso]
+    [userId, startIso, endIso, endIso]
   );
 
   return Promise.all(
@@ -77,6 +79,43 @@ export async function listWorkoutLogsSince(
       fieldDefinition: JSON.parse(row.field_definition) as RecordFieldType[],
     }))
   );
+}
+
+export function listWorkoutLogsSince(
+  db: SQLiteDatabase,
+  userId: string,
+  sinceIso: string
+): Promise<WorkoutLogWithExercise[]> {
+  return listWorkoutLogsBetween(db, userId, sinceIso, null);
+}
+
+// その日(ローカル0時〜翌0時)の全種目の記録。dateKey は "YYYY-MM-DD"。
+export function listWorkoutLogsOnDay(
+  db: SQLiteDatabase,
+  userId: string,
+  dateKey: string
+): Promise<WorkoutLogWithExercise[]> {
+  const { startIso, endIso } = dayRangeIso(dateKey);
+  return listWorkoutLogsBetween(db, userId, startIso, endIso);
+}
+
+// 月内で記録がある日("YYYY-MM-DD")。month は0始まり。カレンダーのドット表示用。
+export async function listLoggedDaysInMonth(
+  db: SQLiteDatabase,
+  userId: string,
+  year: number,
+  month: number
+): Promise<string[]> {
+  const { startIso, endIso } = monthRangeIso(year, month);
+  const rows = await db.getAllAsync<{ date: string }>(
+    `SELECT wl.date as date
+     FROM workout_logs wl
+     INNER JOIN exercises e ON e.id = wl.exercise_id AND e.deleted_at IS NULL
+     WHERE e.user_id = ? AND wl.date >= ? AND wl.date < ? AND wl.deleted_at IS NULL;`,
+    [userId, startIso, endIso]
+  );
+  // 日付の切れ目はローカル時刻なので、キーへの変換はJS側で行う
+  return [...new Set(rows.map((row) => localDateKey(new Date(row.date))))].sort();
 }
 
 export async function listWorkoutLogsByExercise(
@@ -125,6 +164,22 @@ export async function getWorkoutLogSince(
      WHERE exercise_id = ? AND date >= ? AND deleted_at IS NULL
      ORDER BY date DESC LIMIT 1;`,
     [exerciseId, sinceIso]
+  );
+  return row ? rowToWorkoutLog(db, row) : null;
+}
+
+// 指定日(ローカル0時〜翌0時)のその種目の記録。dateKey は "YYYY-MM-DD"。
+export async function getWorkoutLogOnDay(
+  db: SQLiteDatabase,
+  exerciseId: string,
+  dateKey: string
+): Promise<WorkoutLog | null> {
+  const { startIso, endIso } = dayRangeIso(dateKey);
+  const row = await db.getFirstAsync<WorkoutLogRow>(
+    `SELECT * FROM workout_logs
+     WHERE exercise_id = ? AND date >= ? AND date < ? AND deleted_at IS NULL
+     ORDER BY date DESC LIMIT 1;`,
+    [exerciseId, startIso, endIso]
   );
   return row ? rowToWorkoutLog(db, row) : null;
 }
