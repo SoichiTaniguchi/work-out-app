@@ -12,7 +12,7 @@
     "build": "tsc --project tsconfig.build.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/sync.test.ts test/users.test.ts"
+    "test": "tsx --test test/sync.test.ts test/users.test.ts test/dateRange.test.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

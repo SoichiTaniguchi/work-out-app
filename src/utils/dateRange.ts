@@ -31,7 +31,7 @@ export function todayKey(): string {
 
 // ローカルのその日の0時
 export function parseDateKey(key: string): Date {
-  const [year, month, day] = key.split("-").map(Number);
+  const [year = 0, month = 1, day = 1] = key.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
@@ -73,12 +73,16 @@ export function weekKeys(key: string): string[] {
   return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
 }
 
+function mondayOf(key: string): string {
+  return weekKeys(key)[0] ?? key;
+}
+
 // 月曜始まりの月表示。前後の月の日も含めて7日×N週に揃える。
 export function monthWeeks(year: number, month: number): string[][] {
   const first = localDateKey(new Date(year, month, 1));
   const last = localDateKey(new Date(year, month + 1, 0));
   const weeks: string[][] = [];
-  let cursor = weekKeys(first)[0];
+  let cursor = mondayOf(first);
   while (cursor <= last) {
     weeks.push(weekKeys(cursor));
     cursor = addDays(cursor, 7);
@@ -89,7 +93,7 @@ export function monthWeeks(year: number, month: number): string[][] {
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
 export function weekdayLabel(key: string): string {
-  return WEEKDAYS[parseDateKey(key).getDay()];
+  return WEEKDAYS[parseDateKey(key).getDay()] ?? "";
 }
 
 // 例: 10月21日(水)
