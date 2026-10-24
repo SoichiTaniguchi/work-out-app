@@ -118,6 +118,7 @@ src/
   types/                  DB設計(仕様書)に対応する型定義
 server/                   NAS上のDockerで動かす同期用APIサーバー(別パッケージ)
 scripts/deploy-nas.sh     NASへのデプロイ処理
+scripts/preview-nas.sh    PRのブランチをNASで試すための配信処理(/preview)
 ```
 
 ## ドキュメント

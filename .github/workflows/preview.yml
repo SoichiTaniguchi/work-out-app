@@ -1,0 +1,132 @@
+name: Preview on NAS
+
+# マージ前にPRのブランチをiPhoneで試すため、NASの8082番にMetroをもう1つ立てる。
+#   PRに「/preview」とコメント      → そのPRを配信する(配信中の別のPRは止まる)
+#   PRに「/preview stop」とコメント → 止める
+# 配信中のPRにpushすると自動で入れ替わり、PRを閉じる(マージを含む)と止まる。
+#
+# issue_comment と pull_request_target は、PR側ではなくmainのワークフローで動く。
+# 公開リポジトリでNASのrunnerを使うため、フォークからのPRは配信しない。
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [synchronize, closed]
+
+concurrency:
+  group: preview-nas
+  cancel-in-progress: false
+
+env:
+  PREVIEW_URL: exp://100.98.40.63:8082
+
+jobs:
+  resolve:
+    name: 対象のPRを確認
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/preview') &&
+       contains(fromJSON('["OWNER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      action: ${{ steps.resolve.outputs.action }}
+      pr: ${{ steps.resolve.outputs.pr }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          COMMENT: ${{ github.event.comment.body }}
+          PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" = issue_comment ]; then
+            case "$(printf '%s\n' "$COMMENT" | head -n 1 | tr -d '\r' | sed 's/[[:space:]]*$//')" in
+              /preview) action=start ;;
+              "/preview stop") action=stop ;;
+              *) action=none ;;
+            esac
+          elif [ "$EVENT_ACTION" = closed ]; then
+            action=stop-pr
+          else
+            action=update
+          fi
+
+          sha=""
+          if [ "$action" = start ] || [ "$action" = update ]; then
+            read -r sha head_repo < <(gh api "repos/$REPO/pulls/$PR" --jq '"\(.head.sha) \(.head.repo.full_name)"')
+            if [ "$head_repo" != "$REPO" ]; then
+              echo "::warning::フォーク($head_repo)からのPRはNASで配信しない"
+              if [ "$action" = start ]; then exit 1; fi
+              action=none
+            fi
+          fi
+
+          echo "action=$action pr=$PR sha=$sha"
+          { echo "action=$action"; echo "pr=$PR"; echo "sha=$sha"; } >>"$GITHUB_OUTPUT"
+
+  nas:
+    name: NASで配信・停止
+    needs: resolve
+    if: needs.resolve.outputs.action != 'none'
+    runs-on: [self-hosted, nas]
+    outputs:
+      result: ${{ steps.run.outputs.result }}
+    steps:
+      # NASで動かすスクリプトはmainのものを使う(PR側で書き換えたものを動かさない)
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - if: needs.resolve.outputs.sha != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          path: preview-src
+
+      - id: run
+        env:
+          ACTION: ${{ needs.resolve.outputs.action }}
+          PR: ${{ needs.resolve.outputs.pr }}
+        run: |
+          case "$ACTION" in
+            start | update) bash scripts/preview-nas.sh "$ACTION" "$PR" "$GITHUB_WORKSPACE/preview-src" ;;
+            stop) bash scripts/preview-nas.sh stop ;;
+            stop-pr) bash scripts/preview-nas.sh stop "$PR" ;;
+          esac
+
+  report:
+    name: PRに結果をコメント
+    needs: [resolve, nas]
+    # コメントで頼まれたときは必ず返事をする。自動の入れ替えは成否を知らせ、何もしなかったときは黙る
+    if: >-
+      always() && needs.resolve.result != 'skipped' && needs.resolve.outputs.action != 'none' &&
+      (github.event_name == 'issue_comment' ||
+       (needs.resolve.outputs.action == 'update' && needs.nas.outputs.result != 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ needs.resolve.outputs.pr || github.event.issue.number }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+          RESULT: ${{ needs.nas.outputs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case "$RESULT" in
+            started)
+              body="📱 NASでこのPRを配信しました(\`${SHA:0:7}\`)。
+
+          Expo Goで \`$PREVIEW_URL\` を開いてください。初回はバンドルに1分ほどかかります。
+          試し終わったら \`/preview stop\` とコメントするか、PRを閉じると止まります。" ;;
+            stopped) body="プレビューを止めました。" ;;
+            *) body="⚠️ プレビューに失敗しました。ログ: $RUN_URL" ;;
+          esac
+          gh pr comment "$PR" --body "$body"
