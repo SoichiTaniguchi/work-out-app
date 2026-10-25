@@ -53,5 +53,5 @@ jobs:
           # APIキーを使う場合はこの行を anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }} に置き換える
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
-            --allowedTools "Bash(npm ci),Bash(npx tsc --noEmit),Bash(cd server && npm ci),Bash(cd server && npm run typecheck),Bash(cd server && npm test),Bash(git fetch:*),Bash(git merge:*)"
-            --append-system-prompt "ブランチ名・コミット・PRの規約は docs/development.md に従うこと。コミットとPRの前に、アプリの型チェック(npx tsc --noEmit)と、server/ を変更した場合はサーバーの型チェックとテストを通すこと。Issueの実装を依頼された場合は、実装後にPRを作成し、そのPRのアサイニーに SoichiTaniguchi を設定すること。PR本文の末尾には Closes #番号 を書くこと。"
+            --allowedTools "Bash(npm ci),Bash(npx tsc --noEmit),Bash(cd server && npm ci),Bash(cd server && npm run typecheck),Bash(cd server && npm test),Bash(git fetch:*),Bash(git merge:*),Bash(git restore:*)"
+            --append-system-prompt "ブランチ名・コミット・PRの規約は docs/development.md に従うこと。コミットとPRの前に、アプリの型チェック(npx tsc --noEmit)と、server/ を変更した場合はサーバーの型チェックとテストを通すこと。Issueの実装を依頼された場合は、実装後にPRを作成し、そのPRのアサイニーに SoichiTaniguchi を設定すること。PR本文の末尾には Closes #番号 を書くこと。PRで動くときは CLAUDE.md などの設定ファイルがmainの内容に差し替えられ、未コミットの変更に見えることがある。mainを取り込む前に、それらは git restore で捨ててよい。"
