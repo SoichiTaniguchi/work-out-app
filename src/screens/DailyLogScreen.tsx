@@ -2,29 +2,28 @@ import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { colors } from "@/theme/colors";
+import { colors, conditionTint } from "@/theme/colors";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { getDailyLog, getLatestWeightBefore, saveDailyLog } from "@/db/dailyLogs";
 import { formatDateLabel } from "@/utils/dateRange";
+import {
+  applyWeightKey,
+  formatWeightInput,
+  parseWeightInput,
+  WEIGHT_KEYS,
+} from "@/utils/weightInput";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DailyLog">;
 
-const WEIGHT_STEP = 0.1;
 const CONDITION_LABELS = ["とても悪い", "悪い", "ふつう", "良い", "とても良い"];
-const FALLBACK_WEIGHT = 60;
-
-// 体重は小数1桁で扱う(浮動小数点の誤差を表示に出さない)
-function roundWeight(value: number): number {
-  return Math.round(value * 10) / 10;
-}
 
 export default function DailyLogScreen({ navigation, route }: Props) {
   const { userId, date } = route.params;
   const db = useSQLiteContext();
 
   const [loaded, setLoaded] = useState(false);
-  // null は「未入力」。前回値は表示にだけ使い、触るまで保存対象にしない(差分入力と同じ扱い)。
-  const [weight, setWeight] = useState<number | null>(null);
+  // 体重は入力中の文字列で持つ。"" は未入力で、保存の対象にしない。
+  const [weightInput, setWeightInput] = useState("");
   const [previousWeight, setPreviousWeight] = useState<number | null>(null);
   const [condition, setCondition] = useState<number | null>(null);
   const [bowelMoved, setBowelMoved] = useState<boolean | null>(null);
@@ -37,7 +36,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
         getLatestWeightBefore(db, userId, date),
       ]);
       if (cancelled) return;
-      setWeight(current?.weight ?? null);
+      setWeightInput(formatWeightInput(current?.weight));
       setCondition(current?.condition ?? null);
       setBowelMoved(current?.bowelMoved ?? null);
       setPreviousWeight(previous);
@@ -48,15 +47,9 @@ export default function DailyLogScreen({ navigation, route }: Props) {
     };
   }, [db, userId, date]);
 
-  // 未入力のまま ± を押したときは前回値(無ければ既定値)から始める
-  function stepWeight(delta: number) {
-    const base = weight ?? previousWeight ?? FALLBACK_WEIGHT;
-    setWeight(roundWeight(Math.max(0, base + delta)));
-  }
-
   async function save() {
     await saveDailyLog(db, userId, date, {
-      weight,
+      weight: parseWeightInput(weightInput),
       condition,
       bowelMoved,
     });
@@ -75,29 +68,45 @@ export default function DailyLogScreen({ navigation, route }: Props) {
       <Text style={styles.dateLabel}>{formatDateLabel(date)}</Text>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* 体重 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>体重</Text>
-          <View style={styles.stepperRow}>
-            <Pressable style={styles.stepButton} onPress={() => stepWeight(-WEIGHT_STEP)} hitSlop={8}>
-              <Text style={styles.stepText}>−0.1</Text>
-            </Pressable>
-            <View style={styles.valueBox}>
-              {weight !== null ? (
-                <Text style={styles.valueText}>{weight.toFixed(1)} kg</Text>
-              ) : (
-                <Text style={styles.placeholderText}>
-                  {previousWeight !== null ? `前回 ${previousWeight.toFixed(1)} kg` : "未入力"}
-                </Text>
-              )}
-            </View>
-            <Pressable style={styles.stepButton} onPress={() => stepWeight(WEIGHT_STEP)} hitSlop={8}>
-              <Text style={styles.stepText}>+0.1</Text>
-            </Pressable>
-          </View>
+        {/* 体重: 数字キーパッドで入力する */}
+        <View style={styles.weightDisplay}>
+          {weightInput === "" ? (
+            <Text style={styles.weightPlaceholder}>-- . -</Text>
+          ) : (
+            <Text style={styles.weightValue}>{weightInput}</Text>
+          )}
+          <Text style={styles.weightUnit}>kg</Text>
         </View>
 
-        {/* 体調 5段階 */}
+        {/* 前回と同じ体重ならタップ1回で入れられるようにする */}
+        {previousWeight !== null && weightInput === "" ? (
+          <Pressable
+            onPress={() => setWeightInput(formatWeightInput(previousWeight))}
+            hitSlop={8}
+          >
+            <Text style={styles.previousHint}>
+              前回 {previousWeight.toFixed(1)} kg（タップで入力）
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.previousSpacer} />
+        )}
+
+        <View style={styles.keypad}>
+          {WEIGHT_KEYS.map((key) => (
+            <Pressable
+              key={key}
+              style={[styles.key, key === "." && styles.keyFn, key === "del" && styles.keyFn]}
+              onPress={() => setWeightInput((prev) => applyWeightKey(prev, key))}
+            >
+              <Text style={[styles.keyText, (key === "." || key === "del") && styles.keyTextFn]}>
+                {key === "del" ? "⌫" : key}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* 体調 5段階。選んだ段階はカレンダーと同じ緑で示す */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>体調</Text>
           <View style={styles.conditionRow}>
@@ -107,11 +116,15 @@ export default function DailyLogScreen({ navigation, route }: Props) {
               return (
                 <Pressable
                   key={level}
-                  style={[styles.conditionButton, selected && styles.conditionButtonSelected]}
+                  style={[
+                    styles.conditionButton,
+                    selected && { backgroundColor: conditionTint(level) ?? colors.surface },
+                    selected && styles.conditionButtonSelected,
+                  ]}
                   onPress={() => setCondition(level)}
                 >
-                  <Text style={[styles.conditionNumber, selected && styles.selectedText]}>{level}</Text>
-                  <Text style={[styles.conditionLabel, selected && styles.selectedText]} numberOfLines={1}>
+                  <Text style={styles.conditionNumber}>{level}</Text>
+                  <Text style={styles.conditionLabel} numberOfLines={1}>
                     {label}
                   </Text>
                 </Pressable>
@@ -139,9 +152,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        <Text style={styles.hint}>
-          触った項目だけが保存されます。前回の体重は表示のみで、保存はされません。
-        </Text>
+        <Text style={styles.hint}>触った項目だけが保存されます。</Text>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -164,31 +175,33 @@ const styles = StyleSheet.create({
   },
   back: { fontSize: 18, color: colors.textSecondary },
   title: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
-  dateLabel: { fontSize: 13, color: colors.textMuted, paddingHorizontal: 20, marginBottom: 8 },
-  content: { padding: 20, gap: 24 },
-  section: { gap: 10 },
-  sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.textSecondary },
-  stepperRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  stepButton: {
-    width: 64,
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    alignItems: "center",
-    justifyContent: "center",
+  dateLabel: { fontSize: 13, color: colors.textMuted, paddingHorizontal: 20, marginBottom: 4 },
+  content: { padding: 20, paddingTop: 8, gap: 16 },
+  weightDisplay: { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 6 },
+  weightValue: {
+    fontSize: 40,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    fontVariant: ["tabular-nums"],
   },
-  stepText: { fontSize: 14, color: colors.textPrimary, fontWeight: "600" },
-  valueBox: {
-    flex: 1,
-    height: 44,
-    borderRadius: 10,
+  weightPlaceholder: { fontSize: 40, fontWeight: "700", color: colors.textFaint },
+  weightUnit: { fontSize: 16, color: colors.textMuted },
+  previousHint: { fontSize: 12, color: colors.textMuted, textAlign: "center" },
+  previousSpacer: { height: 18 },
+  keypad: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  key: {
+    width: "31%",
+    height: 52,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
   },
-  valueText: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, fontVariant: ["tabular-nums"] },
-  placeholderText: { fontSize: 14, color: colors.textFaint },
+  keyFn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+  keyText: { fontSize: 22, fontWeight: "600", color: colors.textPrimary },
+  keyTextFn: { fontSize: 18, color: colors.textSecondary, fontWeight: "500" },
+  section: { gap: 10 },
+  sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.textSecondary },
   conditionRow: { flexDirection: "row", gap: 6 },
   conditionButton: {
     flex: 1,
@@ -199,9 +212,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 2,
   },
-  conditionButtonSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  conditionButtonSelected: { borderColor: colors.accent, borderWidth: 2 },
   conditionNumber: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
-  conditionLabel: { fontSize: 9, color: colors.textMuted },
+  conditionLabel: { fontSize: 9, color: colors.textSecondary },
   selectedText: { color: "#ffffff" },
   segment: {
     flexDirection: "row",
@@ -213,7 +226,7 @@ const styles = StyleSheet.create({
   segmentItem: { flex: 1, alignItems: "center", paddingVertical: 10 },
   segmentItemSelected: { backgroundColor: colors.accent },
   segmentText: { fontSize: 14, color: colors.textMuted, fontWeight: "600" },
-  hint: { fontSize: 12, color: colors.textMuted, lineHeight: 18 },
+  hint: { fontSize: 12, color: colors.textMuted },
   footer: { padding: 20, paddingBottom: 32, borderTopWidth: 1, borderTopColor: colors.border },
   saveButton: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   saveButtonText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },

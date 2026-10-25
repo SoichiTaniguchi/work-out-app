@@ -20,14 +20,15 @@ import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
+// 1行バーに出す文。ラベルを含めて「体重 68.4kg ／ 体調 4 ／ 排便 あり」の形にする。
 function formatDailyLogSummary(log: DailyLog | null): string {
-  if (!log) return "未記録";
+  if (!log) return "体重・体調・排便を記録する";
   const parts = [
-    log.weight !== null ? `${log.weight.toFixed(1)} kg` : null,
+    log.weight !== null ? `体重 ${log.weight.toFixed(1)}kg` : null,
     log.condition !== null ? `体調 ${log.condition}` : null,
     log.bowelMoved === null ? null : log.bowelMoved ? "排便 あり" : "排便 なし",
   ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(" ／ ") : "未記録";
+  return parts.length > 0 ? parts.join(" ／ ") : "体重・体調・排便を記録する";
 }
 
 function formatPrValue(record: LatestPersonalRecord): string {
@@ -108,22 +109,23 @@ export default function HomeScreen({ navigation, route }: Props) {
         </View>
 
         <CollapsibleCalendar userId={userId} selected={selectedDate} onSelect={setSelectedDate} />
+
+        {/* 1行の要約バー。スクロールしない位置に置き、タップで入力画面を開く */}
+        <Pressable
+          style={styles.dailyBar}
+          onPress={() => navigation.navigate("DailyLog", { userId, date: selectedDate })}
+        >
+          <Text
+            style={dailyLog ? styles.dailyBarValue : styles.dailyBarEmpty}
+            numberOfLines={1}
+          >
+            {formatDailyLogSummary(dailyLog)}
+          </Text>
+          <Text style={styles.dailyBarChevron}>›</Text>
+        </Pressable>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <Pressable
-          style={styles.dailyCard}
-          onPress={() => navigation.navigate("DailyLog", { userId, date: selectedDate })}
-        >
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={styles.cardLabel}>体重・体調・排便</Text>
-            <Text style={dailyLog ? styles.dailyValue : styles.dailyEmpty}>
-              {formatDailyLogSummary(dailyLog)}
-            </Text>
-          </View>
-          <Text style={styles.dailyAction}>{dailyLog ? "編集 ›" : "記録する ›"}</Text>
-        </Pressable>
-
         <Text style={styles.sectionTitle}>{formatDateLabel(selectedDate)}の記録 — プログラムを選ぶ</Text>
         {summaries.length === 0 ? (
           <Pressable
@@ -213,19 +215,26 @@ const styles = StyleSheet.create({
   cardLabel: { fontSize: 11, color: colors.textMuted },
   cardTitle: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
   cardDesc: { fontSize: 12, color: colors.textSecondary },
-  dailyCard: {
+  dailyBar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 8,
     backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  dailyValue: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
-  dailyEmpty: { fontSize: 14, color: colors.textFaint },
-  dailyAction: { fontSize: 13, color: colors.link, fontWeight: "600" },
+  dailyBarValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    fontVariant: ["tabular-nums"],
+  },
+  dailyBarEmpty: { flex: 1, fontSize: 13, color: colors.textMuted },
+  dailyBarChevron: { fontSize: 16, color: colors.textFaint },
   emptyCard: {
     alignItems: "center",
     justifyContent: "center",

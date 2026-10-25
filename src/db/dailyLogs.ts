@@ -77,6 +77,31 @@ export async function listDailyLogsFrom(
   return rows.map(rowToDailyLog);
 }
 
+// カレンダーの背景色用。月内の「日付 → 体調」を返す。date は "YYYY-MM-DD" で
+// 保存しているため、workout_logs のようなローカル時刻への変換は要らない。
+export async function listConditionsInMonth(
+  db: SQLiteDatabase,
+  userId: string,
+  year: number,
+  month: number
+): Promise<Record<string, number>> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const start = `${year}-${pad(month + 1)}-01`;
+  const endDate = new Date(year, month + 1, 1);
+  const end = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-01`;
+
+  const rows = await db.getAllAsync<{ date: string; condition_level: number }>(
+    `SELECT date, condition_level FROM daily_logs
+     WHERE user_id = ? AND date >= ? AND date < ?
+       AND condition_level IS NOT NULL AND deleted_at IS NULL;`,
+    [userId, start, end]
+  );
+
+  const map: Record<string, number> = {};
+  for (const row of rows) map[row.date] = row.condition_level;
+  return map;
+}
+
 // patch で null/undefined の項目は既存の値を残す(この画面では値を消す操作は無い)。
 export async function saveDailyLog(
   db: SQLiteDatabase,

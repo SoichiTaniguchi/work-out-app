@@ -14,3 +14,12 @@ export const colors = {
   danger: "#dc2626",
   link: "#2563eb",
 } as const;
+
+// 体調1〜5の背景色。最も濃い5でも中間色にとどめ、黒い日付とドットが読めるようにしている。
+export const conditionTints = ["#f0fdf4", "#dcfce7", "#bbf7d0", "#86efac", "#4ade80"] as const;
+
+// 体調(1〜5)に対応する背景色。未記録は null。
+export function conditionTint(level: number | null | undefined): string | null {
+  if (level === null || level === undefined) return null;
+  return conditionTints[Math.min(5, Math.max(1, level)) - 1] ?? null;
+}
