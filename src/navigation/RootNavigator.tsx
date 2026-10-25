@@ -18,8 +18,9 @@ export type RootStackParamList = {
   UserSelect: undefined;
   Home: { userId: string };
   FolderList: { userId: string };
-  ExerciseList: { folderId: string };
-  Record: { exerciseId: string };
+  ExerciseList: { folderId: string; date?: string };
+  // date は "YYYY-MM-DD"。省略時は今日
+  Record: { exerciseId: string; date?: string };
   History: { exerciseId: string };
   Summary: { userId: string };
   Settings: { userId: string };
