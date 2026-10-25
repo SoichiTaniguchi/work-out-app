@@ -83,21 +83,24 @@ export default function DailyLogScreen({ navigation, route }: Props) {
           <Text style={styles.weightUnit}>kg</Text>
         </View>
 
-        {/* 前回と同じ体重ならタップ1回で入れられるようにする */}
-        {previousWeight !== null && weightInput === "" ? (
-          <Pressable
-            onPress={() => setWeightInput(formatWeightInput(previousWeight))}
-            hitSlop={8}
-          >
-            <Text style={styles.previousHint}>
-              前回 {previousWeight.toFixed(1)} kg（タップで入力）
+        {/* エラーと前回値は高さを固定した同じ1行に出す。出入りでキーパッドの位置を動かさないため。
+            エラーは入力があるとき、前回値は未入力のときだけなので、同時には出ない。 */}
+        <View style={styles.messageSlot}>
+          {weightError !== null ? (
+            <Text style={styles.errorText} numberOfLines={1}>
+              {weightError}
             </Text>
-          </Pressable>
-        ) : (
-          <View style={styles.previousSpacer} />
-        )}
-
-        {weightError !== null && <Text style={styles.errorText}>{weightError}</Text>}
+          ) : previousWeight !== null && weightInput === "" ? (
+            <Pressable
+              onPress={() => setWeightInput(formatWeightInput(previousWeight))}
+              hitSlop={8}
+            >
+              <Text style={styles.previousHint} numberOfLines={1}>
+                前回 {previousWeight.toFixed(1)} kg（タップで入力）
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         <View style={styles.keypad}>
           {WEIGHT_KEYS.map((key) => (
@@ -198,7 +201,8 @@ const styles = StyleSheet.create({
   weightPlaceholder: { fontSize: 40, fontWeight: "700", color: colors.textFaint },
   weightUnit: { fontSize: 16, color: colors.textMuted },
   previousHint: { fontSize: 12, color: colors.textMuted, textAlign: "center" },
-  previousSpacer: { height: 18 },
+  // 1行分の高さを常に確保しておく(中身が入れ替わってもキーパッドが動かない)
+  messageSlot: { height: 20, alignItems: "center", justifyContent: "center" },
   errorText: { fontSize: 12, color: colors.danger, textAlign: "center" },
   keypad: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   key: {
