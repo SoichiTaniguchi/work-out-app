@@ -24,10 +24,14 @@ Issueを立てる → ブランチを切る → 実装 → PR → CI → (/previ
 テンプレートは`.github/ISSUE_TEMPLATE/`にある。スマホから書く前提で短くしてあるので、
 思いついたことをそのまま書けばよい。
 
+アプリ本体の話か、開発環境の話かは`開発環境`ラベルの有無で見分ける
+(付いていなければアプリ本体)。`不具合`・`改善`とは組み合わせて使う。
+
 | ラベル | 用途 |
 | --- | --- |
 | `改善` | 使い勝手をよくする |
 | `不具合` | 期待どおりに動かない |
+| `開発環境` | CI・Expo/Metro・プレビュー・ドキュメント・@claudeなど、アプリ本体以外 |
 | `デザイン` | 見た目・文字サイズ・配色 |
 | `同期` | NAS同期・サーバー連携 |
 | `サーバー` | `server/`配下 |
@@ -155,13 +159,27 @@ cd server && npm run typecheck && npm test
 
 **アプリが変わるPRを開くと**(Claudeが作ったPRも含む)、そのPRのブランチがNASの8082番から
 自動で配信される(`.github/workflows/preview.yml`)。準備ができるとPRに返信が付くので、
-Expo Goで次を開く。
+Expo Goで次を開く(Safariのアドレスバーに入力すると、Expo Goで開くか聞かれる)。
 
 ```
 exp://100.98.40.63:8082
 ```
 
 本番(8081番)はそのまま動き続けるので、普段使っているアプリには影響しない。
+
+**プレビューは本番と別のアプリとして動く。** Expo Goは本番とプレビューを同じプロジェクトとして扱い、
+そのままでは端末内のデータを共有してしまうため、配信するときに`app.json`へ印(`extra.previewPr`)を
+付け、アプリ側(`src/preview.ts`)がそれを見て動きを変える。
+
+| | 本番(8081) | プレビュー(8082) |
+| --- | --- | --- |
+| Expo Goでの表示名 | 筋トレ記録 | 筋トレ記録 (PR #番号) |
+| 画面上部 | そのまま | 「テスト版 PR #番号」の帯 |
+| データベース | `workout.db` | `workout-preview.db`(空から始まるので、最初にユーザーを作る) |
+| NASとの同期 | する | しない |
+
+`src/preview.ts`より前にmainから作られたブランチは、印を付けても本番とデータを共有する。
+その場合はPRへの返信に警告が出るので、記録・削除はせず、mainを取り込んでから試す。
 
 | 操作 | 動き |
 | --- | --- |
@@ -178,11 +196,7 @@ exp://100.98.40.63:8082
   上限(768MB)を付けて、膨らんでも本番を巻き込まずにプレビューだけが落ちるようにしてある
 - `package-lock.json`がmainと同じなら本番の`node_modules`を読み取り専用で使い回すので、
   1〜2分で配信が始まる。違う場合は`npm ci`が走り、さらに3分ほどかかる
-- **端末内のデータ(記録・ユーザー)は本番と共有されることがある。** DBの構造を変えるPRや
-  削除系の機能を試すときは、テスト用のユーザーを作ってそこで試す
-- 試している間も同期は動く。テストのデータをNASのサーバーに送りたくなければ、
-  先に設定画面の接続先を存在しないURLに変えておく(記録はオフライン扱いで普通に取れる)
-- `server/`の変更はプレビューされない(同期サーバーは本番の1つだけ)。サーバーはCIのテストで確認する
+- `server/`の変更や同期処理はプレビューで試せない(プレビューは同期しない)。サーバーはCIのテストで確認する
 - 反応するのはリポジトリのオーナー・共同編集者のコメントだけ。フォークからのPRは配信しない
   (NAS上でPRのコードが動くため)
 - コメントで動くワークフローはmainのものが使われる。そのため`preview.yml`自体の変更は、
@@ -245,7 +259,7 @@ cd work-out-app
 sudo docker run --rm -v "$(pwd)":/app -w /app \
   -u $(id -u):$(id -g) --group-add 101 \
   -e HOME=/app/.container-home \
-  node:20-bookworm-slim npm ci
+  node:22-bookworm-slim npm ci
 
 # 4. Metroを常駐させる
 sudo docker rm -f workout-metro 2>/dev/null
@@ -255,7 +269,7 @@ sudo docker run -dit --name workout-metro --network host --restart unless-stoppe
   -e HOME=/tmp \
   -e CI=1 \
   -e REACT_NATIVE_PACKAGER_HOSTNAME=100.98.40.63 \
-  node:20-bookworm-slim npx expo start --go --max-workers 1
+  node:22-bookworm-slim npx expo start --go --max-workers 1
 
 sudo docker logs -f workout-metro    # Waiting on http://localhost:8081 が出れば成功
 ```
@@ -333,7 +347,7 @@ ATS(App Transport Security)の設定を足す必要がある。Expo GoはMetro�
 ## 現状の実装状況
 
 - [x] GitHubリポジトリ作成・SSH認証設定
-- [x] Node.jsバージョンの統一(v20系)
+- [x] Node.jsバージョンの統一(v22系)
 - [x] Expo/EASプロジェクトの作成・連携(`eas init`完了)
 - [x] iOS向け`eas build:configure`実施(EAS Build自体はApple Developer Program未登録のため保留中)
 - [ ] Dev Clientのクラウドビルド — Apple Developer Program登録後に実施

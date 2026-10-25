@@ -17,8 +17,8 @@ React Native (Expo) 製のiOSアプリ。
 
 ## 動作環境
 
-- Node.js: v20系(LTS)を使用する。`.nvmrc`を参照。
-- Expo SDK: 57系。
+- Node.js: v22系(LTS)を使用する。`.nvmrc`を参照。Expo SDK 58は22.13以上が必須。
+- Expo SDK: 58系。
 - iOS実機での確認は当面Expo Go(無料)を使う。Dev Client / EAS Buildへの移行はApple Developer Program
   登録後(詳細は`README.md`を参照)。
 

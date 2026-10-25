@@ -22,6 +22,10 @@
         "projectId": "4fbcf2c0-4451-4880-b965-df90130f6020"
       }
     },
-    "owner": "soichi-taniguchis-team"
+    "owner": "soichi-taniguchis-team",
+    "plugins": [
+      "expo-sqlite",
+      "expo-status-bar"
+    ]
   }
 }
