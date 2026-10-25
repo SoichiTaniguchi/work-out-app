@@ -134,6 +134,14 @@ npx expo start --go
   (例: SDK 57では`expo-sqlite`を`plugins`に書くとクラッシュした。SDK 58では`npx expo install`が
   `expo-sqlite`と`expo-status-bar`を自動で追加し、そのままで動く)
 
+## @claudeがPRでmainを取り込めない(`Your local changes would be overwritten`)
+
+claude-code-actionはPRで動くとき、`CLAUDE.md`などの設定ファイルをmainの内容に差し替える
+(PRのブランチ経由で指示を書き換えられないようにするための仕様)。PRのブランチの`CLAUDE.md`が
+mainより古いと、差し替えた分が未コミットの変更に見え、`git merge origin/main`が中断する。
+差分はmainと同じ内容なので捨ててよい。`claude.yml`で`git restore`を許可してあるので、
+Claudeが捨ててから取り込む。手元で取り込む場合は普通に`git merge origin/main`すればよい。
+
 ## `git push`で`Permission denied (publickey)`
 
 SSH鍵がGitHubに登録されていないことが原因。`ssh-keygen`で鍵を作成しGitHubに登録するか、
