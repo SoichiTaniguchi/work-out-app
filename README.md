@@ -79,11 +79,11 @@ QuickConnectは使えない。DSMと純正パッケージを中継する仕組�
 
 ## 開発環境のセットアップ
 
-**Node.js v20系(LTS)を使う。** SDK 57のツールチェーンはNode 20系で動作確認済み。
-Node 22/24系では`expo config`などがエラーメッセージ無しでクラッシュすることがある。
+**Node.js v22系(LTS)を使う。** Expo SDK 58は Node 22.13以上が必須で、20系では動かない。
 
 ```bash
-nvm use 20        # .nvmrc があるのでバージョン指定は不要
+nvm install 22    # 初回のみ
+nvm use 22        # nvm-windowsは .nvmrc を読まないので番号を指定する
 npm install
 npx expo start --go
 ```

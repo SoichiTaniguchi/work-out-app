@@ -245,7 +245,7 @@ cd work-out-app
 sudo docker run --rm -v "$(pwd)":/app -w /app \
   -u $(id -u):$(id -g) --group-add 101 \
   -e HOME=/app/.container-home \
-  node:20-bookworm-slim npm ci
+  node:22-bookworm-slim npm ci
 
 # 4. Metroを常駐させる
 sudo docker rm -f workout-metro 2>/dev/null
@@ -255,7 +255,7 @@ sudo docker run -dit --name workout-metro --network host --restart unless-stoppe
   -e HOME=/tmp \
   -e CI=1 \
   -e REACT_NATIVE_PACKAGER_HOSTNAME=100.98.40.63 \
-  node:20-bookworm-slim npx expo start --go --max-workers 1
+  node:22-bookworm-slim npx expo start --go --max-workers 1
 
 sudo docker logs -f workout-metro    # Waiting on http://localhost:8081 が出れば成功
 ```
@@ -333,7 +333,7 @@ ATS(App Transport Security)の設定を足す必要がある。Expo GoはMetro�
 ## 現状の実装状況
 
 - [x] GitHubリポジトリ作成・SSH認証設定
-- [x] Node.jsバージョンの統一(v20系)
+- [x] Node.jsバージョンの統一(v22系)
 - [x] Expo/EASプロジェクトの作成・連携(`eas init`完了)
 - [x] iOS向け`eas build:configure`実施(EAS Build自体はApple Developer Program未登録のため保留中)
 - [ ] Dev Clientのクラウドビルド — Apple Developer Program登録後に実施

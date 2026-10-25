@@ -14,13 +14,11 @@ ACTION="${1:-}"
 PR="${2:-}"
 SOURCE_DIR="${3:-}"
 DOCKER="${DOCKER:-docker}"
-NODE_IMAGE="${NODE_IMAGE:-node:20-bookworm-slim}"
 MAIN_DIR="${MAIN_DIR:-/volume1/docker/work-out-app}"
 CONTAINER="${PREVIEW_CONTAINER:-workout-metro-preview}"
 MAIN_CONTAINER="${METRO_CONTAINER:-workout-metro}"
 VOLUME="${PREVIEW_VOLUME:-workout-metro-preview}"
 PORT="${PREVIEW_PORT:-8082}"
-PACKAGER_HOSTNAME="${PACKAGER_HOSTNAME:-100.98.40.63}"
 # NASのメモリは1.7GBしかない。プレビューが膨らんでも本番のMetroと同期サーバーを
 # 巻き込まないよう、上限を付けて先にプレビューだけが落ちるようにする。
 MEMORY="${PREVIEW_MEMORY:-768m}"
@@ -76,18 +74,8 @@ start() {
       fi'
   fi
 
-  # Expo Goがログイン済みだと、CLI側もログインしていないと開けない(docs/troubleshooting.md)。
-  # トークンはGitHubに置かず、本番のMetroに渡してあるものを引き継ぐ。
-  # コマンドラインに値が出ないよう、環境変数として渡す。
   local token_env=()
-  EXPO_TOKEN="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$MAIN_CONTAINER" 2>/dev/null |
-    sed -n 's/^EXPO_TOKEN=//p')" || true
-  if [ -n "$EXPO_TOKEN" ]; then
-    export EXPO_TOKEN
-    token_env=(-e EXPO_TOKEN)
-  else
-    log "warning: $MAIN_CONTAINER has no EXPO_TOKEN; Expo Go signed in to an account cannot open the preview"
-  fi
+  if load_expo_token "$MAIN_CONTAINER"; then token_env=(-e EXPO_TOKEN); fi
 
   # 引数と環境変数は本番のMetroに揃えている(理由は docs/development.md)
   log "start Metro for PR $PR on port $PORT"

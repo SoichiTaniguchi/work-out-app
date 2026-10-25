@@ -47,7 +47,7 @@ NASのホスト側で公開されているポートには届かない。
 ホストのネットワークに入ったコンテナから確認する。
 
 ```bash
-docker run --rm --network host node:20-bookworm-slim \
+docker run --rm --network host node:22-bookworm-slim \
   node -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1))"
 ```
 
@@ -128,10 +128,11 @@ npx expo start --go
 
 ## `eas build:configure` や `expo config --json` がエラーメッセージ無しでクラッシュする
 
-- Node.jsのバージョンを確認(`node -v`)。20系以外なら`nvm use 20`で切り替え、`where node`で
+- Node.jsのバージョンを確認(`node -v`)。22系以外なら`nvm use 22`で切り替え、`where node`で
   意図しないNode.jsが優先されていないか確認する
 - `app.json`の`plugins`に、対応する設定プラグインを持たないパッケージ名を書いていないか確認する
-  (例: `expo-sqlite`はこのバージョンでは`plugins`に書く必要が無く、書くとクラッシュの原因になった)
+  (例: SDK 57では`expo-sqlite`を`plugins`に書くとクラッシュした。SDK 58では`npx expo install`が
+  `expo-sqlite`と`expo-status-bar`を自動で追加し、そのままで動く)
 
 ## `git push`で`Permission denied (publickey)`
 
@@ -154,24 +155,32 @@ Expoが管理するパッケージのバージョン確認には代わりに以�
 npx expo install --check
 ```
 
-## SDK 51→57 移行(2026年9月実施)
+## Expo Goで`Project is incompatible with this version of Expo Go`(SDKの上げ方)
 
 iPhone側のExpo Goアプリは常に最新SDKのみに対応しており(App Store版は自動更新されるため)、
 プロジェクト側のSDKが古いままだと`Project is incompatible with this version of Expo Go`という
-エラーで起動できなくなる。今回Expo Goが57系になっていたため、プロジェクトもSDK 57へ上げた。
+エラーで起動できなくなる。**iOSのExpo Goは古い版に戻せないので、プロジェクトのSDKを上げるしかない。**
+本番もプレビューも同時に開けなくなるので、気づいたらすぐに対応する。
+
+これまでの移行:
+
+| 時期 | SDK | 主な変更 |
+| --- | --- | --- |
+| 2026年9月 | 51→57 | 下の「51→57で実際に発生した問題」を参照 |
+| 2026年10月 | 57→58 | Node 22.13以上が必須に。`react-native-gesture-handler`が3系に。`react-native-worklets`が必須に |
 
 同じ状況になった場合の手順:
 
 ```bash
-# 1. Node.jsのバージョンを合わせる
-nvm use 20
+# 1. Node.jsのバージョンを合わせる(新しいSDKが要求するNodeは npm view expo@^58 engines で確認)
+nvm use 22
 
 # 2. 万一に備えてコミットしておく
 git add -A
 git commit -m "before upgrading expo sdk"
 
-# 3. Expo本体を目的のSDK系列に上げる(例: 57系)
-npx expo install expo@^57.0.0
+# 3. Expo本体を目的のSDK系列に上げる(例: 58系)
+npx expo install expo@^58.0.0
 
 # 4. 依存パッケージの「期待バージョン」を確認
 npx expo install --fix
@@ -195,7 +204,16 @@ npm install --legacy-peer-deps
 npx expo-doctor
 ```
 
-移行時に実際に発生した問題と対処:
+**SDKが要求するNodeのメジャーバージョンが変わったときは、NAS側も合わせる。**
+`.nvmrc`(CIが使う)と`scripts/lib/nas.sh`の`NODE_IMAGE`(NASのMetroと`npm ci`が使う)を揃える。
+本番のMetroコンテナは、マージ後のデプロイでイメージの違いを検知して自動で作り直される
+(`EXPO_TOKEN`は古いコンテナから引き継ぐ)。
+
+なお、プレビュー(`/preview`)はmain側のスクリプトで動くため、Nodeを上げるPR自体は
+プレビューできない(古いNodeで起動して失敗する)。手元のPCで`npx expo start --go`して確認するか、
+マージして本番で確認する。
+
+51→57で実際に発生した問題と対処:
 
 - **`app.json`の`splash`プロパティでスキーマエラー**: 新しいExpo設定スキーマでは
   トップレベルの`splash`が廃止されているため削除した(スプラッシュ画面はデフォルト動作に任せる)。
