@@ -5,6 +5,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { useIsFocused } from "@react-navigation/native";
 import { colors } from "@/theme/colors";
 import { listLoggedDaysInMonth } from "@/db/logs";
+import YearMonthPicker from "@/components/YearMonthPicker";
 import {
   addDays,
   monthWeeks,
@@ -58,6 +59,7 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     month: selectedDate.getMonth(),
   });
   const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // 週表示のときは選択日の月、月表示のときは閲覧中の月を基準にする
   const anchor: YearMonth = expanded
@@ -87,6 +89,17 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     setExpanded(!expanded);
   };
 
+  // 年月ピッカーで選んだ月へ移る。同じ日付を使い、月末を超えるときは月末、今日より先なら今日にする
+  const pickMonth = ({ year, month }: YearMonth) => {
+    setPickerOpen(false);
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const day = Math.min(selectedDate.getDate(), lastDay);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const key = `${year}-${pad(month + 1)}-${pad(day)}`;
+    setViewMonth({ year, month });
+    onSelect(key > today ? today : key);
+  };
+
   // 「今日」に戻る。月表示のときは今日の月も表示する
   const goToday = () => {
     const t = parseDateKey(today);
@@ -106,11 +119,13 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
   const settle = () => Animated.spring(dragX, { toValue: 0, useNativeDriver: true }).start();
   const swipe = PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) =>
-      !expanded && Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
     onPanResponderMove: (_, g) => dragX.setValue(g.dx),
     onPanResponderRelease: (_, g) => {
       const step = g.dx < -40 ? 1 : g.dx > 40 ? -1 : 0;
-      if (step === 0) {
+      // 今日を含む週・月より先へは進めない
+      const blocked = step === 1 && nextDisabled;
+      if (step === 0 || blocked) {
         settle();
         return;
       }
@@ -139,6 +154,10 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
   })();
 
   const titleMonth = anchor;
+  const todayYM = {
+    year: parseDateKey(today).getFullYear(),
+    month: parseDateKey(today).getMonth(),
+  };
   const nextDisabled = expanded
     ? isAfterMonth(shiftMonth(viewMonth, 1), today)
     : weekKeys(selected)[6]! >= today;
@@ -149,14 +168,18 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
         <Pressable onPress={() => move(-1)} hitSlop={10}>
           <Text style={styles.arrow}>‹</Text>
         </Pressable>
-        <Text style={styles.title}>
-          {expanded ? `${titleMonth.year}年${titleMonth.month + 1}月` : weekTitle}
-        </Text>
+        <Pressable onPress={() => setPickerOpen(true)} hitSlop={6} style={styles.titleButton}>
+          <Text style={styles.title}>
+            {expanded ? `${titleMonth.year}年${titleMonth.month + 1}月` : weekTitle}
+          </Text>
+        </Pressable>
         <Pressable onPress={() => move(1)} hitSlop={10} disabled={nextDisabled}>
           <Text style={[styles.arrow, nextDisabled && styles.arrowDisabled]}>›</Text>
         </Pressable>
         <View style={styles.rightActions}>
-          {selected !== today && (
+          {(expanded
+            ? !(viewMonth.year === todayYM.year && viewMonth.month === todayYM.month)
+            : selected !== today) && (
             <Pressable onPress={goToday} hitSlop={10}>
               <Text style={styles.todayText}>今日</Text>
             </Pressable>
@@ -220,6 +243,14 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
         ))}
       </Animated.View>
       </View>
+
+      <YearMonthPicker
+        visible={pickerOpen}
+        initial={expanded ? viewMonth : anchor}
+        today={todayYM}
+        onConfirm={pickMonth}
+        onClose={() => setPickerOpen(false)}
+      />
     </View>
   );
 }
@@ -244,6 +275,14 @@ const styles = StyleSheet.create({
   arrow: { fontSize: 20, color: colors.textPrimary, paddingHorizontal: 6 },
   arrowDisabled: { color: colors.textFaint },
   clip: { marginHorizontal: -10, paddingHorizontal: 10, overflow: "hidden" },
+  titleButton: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   rightActions: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12 },
   todayText: { fontSize: 14, fontWeight: "500", color: colors.link },
   toggle: { padding: 4 },
