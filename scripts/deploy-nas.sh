@@ -14,7 +14,6 @@ SOURCE_DIR="${1:-$(pwd)}"
 DEPLOY_DIR="${DEPLOY_DIR:-/volume1/docker/work-out-app}"
 DOCKER="${DOCKER:-docker}"
 METRO_CONTAINER="${METRO_CONTAINER:-workout-metro}"
-NODE_IMAGE="${NODE_IMAGE:-node:20-bookworm-slim}"
 # コンテナを動かすユーザー。NASの共有フォルダのACLに合わせる(README参照)。
 RUN_UID="${RUN_UID:-1026}"
 RUN_GID="${RUN_GID:-100}"
@@ -68,8 +67,26 @@ else
   cp package-lock.json "$LOCK_STAMP"
 fi
 
-log "restart Metro"
-$DOCKER restart "$METRO_CONTAINER"
+# Nodeのイメージが変わったとき(Expo SDKの更新など)は、再起動ではなくコンテナを作り直す。
+# 引数と環境変数の理由は docs/development.md の「NAS上のMetroの構築・更新」を参照。
+current_image="$($DOCKER inspect -f '{{.Config.Image}}' "$METRO_CONTAINER" 2>/dev/null || true)"
+if [ "$current_image" = "$NODE_IMAGE" ]; then
+  log "restart Metro"
+  $DOCKER restart "$METRO_CONTAINER"
+else
+  log "recreate Metro (${current_image:-none} -> $NODE_IMAGE)"
+  token_env=()
+  if load_expo_token "$METRO_CONTAINER"; then token_env=(-e EXPO_TOKEN); fi
+  $DOCKER rm -f "$METRO_CONTAINER" >/dev/null 2>&1 || true
+  $DOCKER run -dit --name "$METRO_CONTAINER" --network host --restart unless-stopped \
+    -v "$DEPLOY_DIR":/app -w /app \
+    -u "$RUN_UID:$RUN_GID" --group-add "$ADMIN_GID" \
+    -e HOME=/tmp \
+    -e CI=1 \
+    -e REACT_NATIVE_PACKAGER_HOSTNAME="$PACKAGER_HOSTNAME" \
+    "${token_env[@]}" \
+    "$NODE_IMAGE" npx expo start --go --max-workers 1 >/dev/null
+fi
 
 log "rebuild sync server"
 # レイヤキャッシュが効くので、server/ に変更が無ければすぐ終わる
