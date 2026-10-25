@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, PanResponder, StyleSheet } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, View, Text, Pressable, PanResponder, StyleSheet } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import { useIsFocused } from "@react-navigation/native";
 import { colors } from "@/theme/colors";
@@ -80,15 +80,43 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     else onSelect(addDays(selected, delta * 7) > today ? today : addDays(selected, delta * 7));
   };
 
-  // 週表示のとき、カレンダーを左右にスワイプして前後の週へ移動する
+  // 週表示のとき、週の行を指に合わせて左右に動かす。離したら前後の週へ切り替える
+  const dragX = useRef(new Animated.Value(0)).current;
+  const [rowWidth, setRowWidth] = useState(300);
+  const settle = () => Animated.spring(dragX, { toValue: 0, useNativeDriver: true }).start();
   const swipe = PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) =>
-      !expanded && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      !expanded && Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+    onPanResponderMove: (_, g) => dragX.setValue(g.dx),
     onPanResponderRelease: (_, g) => {
-      if (g.dx < -40) move(1);
-      else if (g.dx > 40) move(-1);
+      const step = g.dx < -40 ? 1 : g.dx > 40 ? -1 : 0;
+      if (step === 0) {
+        settle();
+        return;
+      }
+      // 行を外へ流し切ってから日付を切り替え、反対側から戻す
+      Animated.timing(dragX, {
+        toValue: -step * rowWidth,
+        duration: 150,
+        useNativeDriver: true,
+      }).start(() => {
+        dragX.setValue(step * rowWidth);
+        move(step);
+        Animated.timing(dragX, { toValue: 0, duration: 150, useNativeDriver: true }).start();
+      });
     },
+    onPanResponderTerminate: settle,
   });
+
+  // 週表示の見出しは「10/19〜10/25」の形式
+  const shortDate = (key: string) => {
+    const d = parseDateKey(key);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+  const weekTitle = (() => {
+    const w = weekKeys(selected);
+    return `${shortDate(w[0]!)}〜${shortDate(w[6]!)}`;
+  })();
 
   const titleMonth = anchor;
   const nextDisabled = expanded
@@ -102,7 +130,7 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
           <Text style={styles.arrow}>‹</Text>
         </Pressable>
         <Text style={styles.title}>
-          {titleMonth.year}年{titleMonth.month + 1}月
+          {expanded ? `${titleMonth.year}年${titleMonth.month + 1}月` : weekTitle}
         </Text>
         <Pressable onPress={() => move(1)} hitSlop={10} disabled={nextDisabled}>
           <Text style={[styles.arrow, nextDisabled && styles.arrowDisabled]}>›</Text>
@@ -120,43 +148,48 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
         ))}
       </View>
 
-      {weeks.map((week) => (
-        <View key={week[0]} style={styles.weekRow}>
-          {week.map((key) => {
-            const isFuture = key > today;
-            const isSelected = key === selected;
-            const outOfMonth = expanded && parseDateKey(key).getMonth() !== viewMonth.month;
-            return (
-              <Pressable
-                key={key}
-                style={styles.dayCell}
-                disabled={isFuture}
-                onPress={() => onSelect(key)}
-                accessibilityLabel={key + " " + weekdayLabel(key)}
-              >
-                <View
-                  style={[
-                    styles.dayCircle,
-                    key === today && styles.dayToday,
-                    isSelected && styles.daySelected,
-                  ]}
+      <Animated.View
+        onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
+        style={{ transform: [{ translateX: dragX }] }}
+      >
+        {weeks.map((week) => (
+          <View key={week[0]} style={styles.weekRow}>
+            {week.map((key) => {
+              const isFuture = key > today;
+              const isSelected = key === selected;
+              const outOfMonth = expanded && parseDateKey(key).getMonth() !== viewMonth.month;
+              return (
+                <Pressable
+                  key={key}
+                  style={styles.dayCell}
+                  disabled={isFuture}
+                  onPress={() => onSelect(key)}
+                  accessibilityLabel={key + " " + weekdayLabel(key)}
                 >
-                  <Text
+                  <View
                     style={[
-                      styles.dayText,
-                      (isFuture || outOfMonth) && styles.dayTextMuted,
-                      isSelected && styles.dayTextSelected,
+                      styles.dayCircle,
+                      key === today && styles.dayToday,
+                      isSelected && styles.daySelected,
                     ]}
                   >
-                    {parseDateKey(key).getDate()}
-                  </Text>
-                </View>
-                <View style={[styles.dot, loggedDays.has(key) && styles.dotOn]} />
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
+                    <Text
+                      style={[
+                        styles.dayText,
+                        (isFuture || outOfMonth) && styles.dayTextMuted,
+                        isSelected && styles.dayTextSelected,
+                      ]}
+                    >
+                      {parseDateKey(key).getDate()}
+                    </Text>
+                  </View>
+                  <View style={[styles.dot, loggedDays.has(key) && styles.dotOn]} />
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </Animated.View>
     </View>
   );
 }
