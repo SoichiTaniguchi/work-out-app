@@ -6,7 +6,8 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { getUser, updateUser } from "@/db/users";
 import { getSyncSettings, setSetting, type SyncSettings } from "@/db/appSettings";
-import { runSync } from "@/sync/runSync";
+import { PREVIEW_SYNC_MESSAGE, runSync } from "@/sync/runSync";
+import { IS_PREVIEW } from "@/preview";
 import { formatDateTime } from "@/utils/recordFormat";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Settings">;
@@ -126,6 +127,8 @@ export default function SettingsScreen({ navigation, route }: Props) {
       </Pressable>
 
       <Text style={styles.sectionTitle}>NAS同期</Text>
+
+      {IS_PREVIEW && <Text style={styles.errorNote}>{PREVIEW_SYNC_MESSAGE}</Text>}
 
       {editingUrl ? (
         <View style={styles.editRow}>

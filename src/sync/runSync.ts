@@ -5,6 +5,9 @@ import { applyRemoteChanges } from "@/sync/apply";
 import { postSync, SyncError } from "@/sync/client";
 import { collectLocalChanges } from "@/sync/collect";
 import { countChanges } from "@/sync/types";
+import { IS_PREVIEW } from "@/preview";
+
+export const PREVIEW_SYNC_MESSAGE = "テスト版(PRのプレビュー)では同期しません";
 
 export interface SyncResult {
   sent: number;
@@ -14,6 +17,9 @@ export interface SyncResult {
 // 同期1回分。ローカルの未送信分を送り、返ってきた変更を反映する。
 // 失敗したら lastCursor / lastPushedAt を進めないので、次回また同じ範囲からやり直す。
 export async function runSync(db: SQLiteDatabase, userId: string): Promise<SyncResult> {
+  // テストの記録を本番のサーバーに送らない(src/preview.ts)
+  if (IS_PREVIEW) throw new SyncError(PREVIEW_SYNC_MESSAGE);
+
   const settings = await getSyncSettings(db);
   // 収集より前の時刻を控える。送信中に書かれた変更を次回取りこぼさないため。
   const startedAt = nowIso();

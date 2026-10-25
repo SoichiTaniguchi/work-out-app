@@ -60,6 +60,25 @@ start() {
       find /app -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + &&
       tar -C /app -xf - --no-same-owner'
 
+  # Expo Goの一覧で本番と見分けられるよう表示名にPR番号を付け、アプリにプレビューだと知らせる
+  # (src/preview.ts がこれを見てデータベースを分け、同期を止める)。
+  log "mark app.json as preview of PR $PR"
+  $DOCKER run --rm -v "$VOLUME":/app -e PR="$PR" "$NODE_IMAGE" node -e '
+    const fs = require("fs");
+    const file = "/app/app.json";
+    const config = JSON.parse(fs.readFileSync(file, "utf8"));
+    config.expo.name = `${config.expo.name} (PR #${process.env.PR})`;
+    config.expo.extra = { ...config.expo.extra, previewPr: Number(process.env.PR) };
+    fs.writeFileSync(file, JSON.stringify(config, null, 2));
+  '
+
+  # src/preview.ts が無い古いブランチは、印を付けても本番とデータを共有してしまう
+  local started=started
+  if ! grep -qs previewPr "$SOURCE_DIR/src/preview.ts"; then
+    log "warning: this branch predates src/preview.ts; it shares data with production"
+    started=started-shared
+  fi
+
   local modules_mount=()
   if cmp -s "$SOURCE_DIR/package-lock.json" "$MAIN_DIR/.deployed-app-lock.json"; then
     log "package-lock.json same as main, reusing its node_modules (read-only)"
@@ -90,7 +109,7 @@ start() {
     "$NODE_IMAGE" npx expo start --go --port "$PORT" --max-workers 1 >/dev/null
 
   wait_for "preview metro" "http://localhost:$PORT/status" 60
-  result started
+  result "$started"
 }
 
 case "$ACTION" in
