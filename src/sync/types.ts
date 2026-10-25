@@ -52,12 +52,23 @@ export interface SyncPersonalRecord extends SyncRecordBase {
   achievedAt: string;
 }
 
+export interface SyncDailyLog extends SyncRecordBase {
+  userId: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  weight: number | null;
+  /** 体調 1〜5 */
+  condition: number | null;
+  bowelMoved: boolean | null;
+}
+
 export interface SyncChanges {
   users: SyncUser[];
   folders: SyncFolder[];
   exercises: SyncExercise[];
   workoutLogs: SyncWorkoutLog[];
   personalRecords: SyncPersonalRecord[];
+  dailyLogs: SyncDailyLog[];
 }
 
 export interface SyncRequest {
@@ -72,7 +83,14 @@ export interface SyncResponse {
 }
 
 export function emptyChanges(): SyncChanges {
-  return { users: [], folders: [], exercises: [], workoutLogs: [], personalRecords: [] };
+  return {
+    users: [],
+    folders: [],
+    exercises: [],
+    workoutLogs: [],
+    personalRecords: [],
+    dailyLogs: [],
+  };
 }
 
 export function countChanges(changes: SyncChanges): number {
@@ -81,6 +99,7 @@ export function countChanges(changes: SyncChanges): number {
     changes.folders.length +
     changes.exercises.length +
     changes.workoutLogs.length +
-    changes.personalRecords.length
+    changes.personalRecords.length +
+    changes.dailyLogs.length
   );
 }

@@ -6,7 +6,8 @@ import type { SyncChanges } from "@/sync/types";
 // この端末で編集された行を潰さないよう、ローカルでも updated_at を比べて新しい方を残す。
 //
 // 親子関係(種目 → 記録)のため、users → exercises → folders → workout_logs →
-// personal_records の順に適用する。外部キーが有効なので順序を崩すと失敗する。
+// personal_records → daily_logs の順に適用する。外部キーが有効なので順序を崩すと失敗する。
+// daily_logs はユーザーに直接ぶら下がるだけなので、users の後ならどこでもよい。
 
 export async function applyRemoteChanges(
   db: SQLiteDatabase,
@@ -155,6 +156,41 @@ export async function applyRemoteChanges(
       );
       applied += 1;
     }
+    for (const log of changes.dailyLogs) {
+      if (!(await isNewer(db, "daily_logs", log.id, log.updatedAt))) continue;
+      if (!(await userExists(db, log.userId))) continue;
+
+      // UNIQUE(user_id, date) があるため、同じ日の別idの行は先に片付ける
+      // (2台の端末が同じ日の記録を別々に作った場合)。
+      await db.runAsync(
+        "DELETE FROM daily_logs WHERE user_id = ? AND date = ? AND id <> ?;",
+        [log.userId, log.date, log.id]
+      );
+      await db.runAsync(
+        `INSERT INTO daily_logs
+           (id, user_id, date, weight, condition_level, bowel_moved, updated_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           user_id = excluded.user_id,
+           date = excluded.date,
+           weight = excluded.weight,
+           condition_level = excluded.condition_level,
+           bowel_moved = excluded.bowel_moved,
+           updated_at = excluded.updated_at,
+           deleted_at = excluded.deleted_at;`,
+        [
+          log.id,
+          log.userId,
+          log.date,
+          log.weight,
+          log.condition,
+          log.bowelMoved === null ? null : log.bowelMoved ? 1 : 0,
+          log.updatedAt,
+          log.deletedAt,
+        ]
+      );
+      applied += 1;
+    }
   });
 
   return applied;
@@ -162,7 +198,7 @@ export async function applyRemoteChanges(
 
 async function isNewer(
   db: SQLiteDatabase,
-  table: "users" | "folders" | "exercises" | "workout_logs" | "personal_records",
+  table: "users" | "folders" | "exercises" | "workout_logs" | "personal_records" | "daily_logs",
   id: string,
   updatedAt: string
 ): Promise<boolean> {
@@ -171,6 +207,15 @@ async function isNewer(
     [id]
   );
   return row === null || updatedAt > row.updated_at;
+}
+
+// ユーザーがこの端末に無い日次記録は、外部キーで落ちるので飛ばす。
+// ユーザーは同じ応答の中で先に適用されるため、通常は起こらない。
+async function userExists(db: SQLiteDatabase, userId: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ id: string }>("SELECT id FROM users WHERE id = ?;", [
+    userId,
+  ]);
+  return row !== null;
 }
 
 // 種目がこの端末に無い記録・自己ベストは、外部キーで落ちるので飛ばす。

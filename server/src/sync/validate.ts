@@ -3,6 +3,7 @@ import {
   type PersonalRecordType,
   type RecordFieldType,
   type SyncChanges,
+  type SyncDailyLog,
   type SyncExercise,
   type SyncFolder,
   type SyncPersonalRecord,
@@ -75,6 +76,13 @@ function asBoolean(value: unknown, path: string): boolean {
     fail(path, "a boolean");
   }
   return value;
+}
+
+function asNullableBoolean(value: unknown, path: string): boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return asBoolean(value, path);
 }
 
 function asStringArray(value: unknown, path: string): string[] {
@@ -172,6 +180,28 @@ function parsePersonalRecord(row: Record<string, unknown>, path: string): SyncPe
   };
 }
 
+function parseDailyLog(row: Record<string, unknown>, path: string): SyncDailyLog {
+  const weight = asNullableNumber(row.weight, `${path}.weight`);
+  if (weight !== null && weight <= 0) {
+    fail(`${path}.weight`, "a positive number or null");
+  }
+
+  const condition = asNullableNumber(row.condition, `${path}.condition`);
+  // 体調は5段階。範囲外はカレンダーの色が決まらないので受け取らない。
+  if (condition !== null && (!Number.isInteger(condition) || condition < 1 || condition > 5)) {
+    fail(`${path}.condition`, "an integer from 1 to 5, or null");
+  }
+
+  return {
+    ...parseBase(row, path),
+    userId: asString(row.userId, `${path}.userId`),
+    date: asString(row.date, `${path}.date`),
+    weight,
+    condition,
+    bowelMoved: asNullableBoolean(row.bowelMoved, `${path}.bowelMoved`),
+  };
+}
+
 function parseChanges(value: unknown, path: string): SyncChanges {
   if (value === undefined || value === null) {
     return emptyChanges();
@@ -188,6 +218,7 @@ function parseChanges(value: unknown, path: string): SyncChanges {
       `${path}.personalRecords`,
       parsePersonalRecord
     ),
+    dailyLogs: parseList(changes.dailyLogs, `${path}.dailyLogs`, parseDailyLog),
   };
 }
 

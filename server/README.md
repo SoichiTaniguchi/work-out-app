@@ -143,7 +143,11 @@ PCからも `curl.exe http://<NASのIP>:3000/health` で確認する。繋がら
                       "updatedAt": "...", "deletedAt": null }],
     "personalRecords": [{ "id": "pr1", "exerciseId": "ex1", "type": "maxWeight",
                           "value": 60, "achievedAt": "...",
-                          "updatedAt": "...", "deletedAt": null }]
+                          "updatedAt": "...", "deletedAt": null }],
+    // 体重・体調・排便(1日1行)。未入力の項目はnullで送る
+    "dailyLogs": [{ "id": "dl1", "userId": "u1", "date": "2026-10-26",
+                    "weight": 68.4, "condition": 4, "bowelMoved": true,
+                    "updatedAt": "...", "deletedAt": null }]
   }
 }
 
@@ -154,7 +158,7 @@ PCからも `curl.exe http://<NASのIP>:3000/health` で確認する。繋がら
 | 状況 | ステータス |
 | --- | --- |
 | 正常 | 200 |
-| リクエストの形が違う | 400(どの項目かをメッセージで返す) |
+| リクエストの形が違う | 400(どの項目かをメッセージで返す。`condition`が1〜5の外もここ) |
 | 他ユーザーのデータ・存在しない種目を参照 | 409 |
 | `SYNC_TOKEN`設定時にトークン不一致 | 401 |
 

@@ -11,6 +11,7 @@ import {
   formatWeightInput,
   parseWeightInput,
   WEIGHT_KEYS,
+  weightInputError,
 } from "@/utils/weightInput";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DailyLog">;
@@ -47,7 +48,11 @@ export default function DailyLogScreen({ navigation, route }: Props) {
     };
   }, [db, userId, date]);
 
+  // 範囲外や未完成の入力があるときは保存させない(打ち間違いをそのまま残さないため)
+  const weightError = weightInputError(weightInput);
+
   async function save() {
+    if (weightError !== null) return;
     await saveDailyLog(db, userId, date, {
       weight: parseWeightInput(weightInput),
       condition,
@@ -91,6 +96,8 @@ export default function DailyLogScreen({ navigation, route }: Props) {
         ) : (
           <View style={styles.previousSpacer} />
         )}
+
+        {weightError !== null && <Text style={styles.errorText}>{weightError}</Text>}
 
         <View style={styles.keypad}>
           {WEIGHT_KEYS.map((key) => (
@@ -156,7 +163,11 @@ export default function DailyLogScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable style={styles.saveButton} onPress={save} disabled={!loaded}>
+        <Pressable
+          style={[styles.saveButton, (!loaded || weightError !== null) && styles.saveButtonDisabled]}
+          onPress={save}
+          disabled={!loaded || weightError !== null}
+        >
           <Text style={styles.saveButtonText}>保存</Text>
         </Pressable>
       </View>
@@ -188,6 +199,7 @@ const styles = StyleSheet.create({
   weightUnit: { fontSize: 16, color: colors.textMuted },
   previousHint: { fontSize: 12, color: colors.textMuted, textAlign: "center" },
   previousSpacer: { height: 18 },
+  errorText: { fontSize: 12, color: colors.danger, textAlign: "center" },
   keypad: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   key: {
     width: "31%",
@@ -229,5 +241,6 @@ const styles = StyleSheet.create({
   hint: { fontSize: 12, color: colors.textMuted },
   footer: { padding: 20, paddingBottom: 32, borderTopWidth: 1, borderTopColor: colors.border },
   saveButton: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  saveButtonDisabled: { backgroundColor: colors.borderStrong },
   saveButtonText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
 });

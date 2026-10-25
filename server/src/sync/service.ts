@@ -22,10 +22,18 @@ interface RejectedIds {
   exercises: string[];
   workoutLogs: string[];
   personalRecords: string[];
+  dailyLogs: string[];
 }
 
 function emptyRejected(): RejectedIds {
-  return { users: [], folders: [], exercises: [], workoutLogs: [], personalRecords: [] };
+  return {
+    users: [],
+    folders: [],
+    exercises: [],
+    workoutLogs: [],
+    personalRecords: [],
+    dailyLogs: [],
+  };
 }
 
 // Last Write Wins。同時刻ならサーバー側を残す(端末ごとに結果がぶれないようにするため)。
@@ -44,6 +52,7 @@ export function applySync(db: Database, request: SyncRequest): SyncResponse {
     pushFolders(db, request, seq, rejected);
     pushWorkoutLogs(db, request, seq, rejected);
     pushPersonalRecords(db, request, seq, rejected);
+    pushDailyLogs(db, request, seq, rejected);
 
     return {
       cursor: seq,
@@ -311,6 +320,67 @@ function pushPersonalRecords(
   }
 }
 
+function pushDailyLogs(
+  db: Database,
+  request: SyncRequest,
+  seq: number,
+  rejected: RejectedIds
+): void {
+  const selectById = db.prepare("SELECT id, updated_at FROM daily_logs WHERE id = ?;");
+  // 同じ日の記録を2台の端末が別々に作ると、idが違う行が UNIQUE(user_id, date) でぶつかる。
+  // そのため自己ベストと同じく、日付の粒度でも既存行を探す。
+  const selectByKey = db.prepare(
+    "SELECT id, updated_at FROM daily_logs WHERE user_id = ? AND date = ?;"
+  );
+  const deleteById = db.prepare("DELETE FROM daily_logs WHERE id = ?;");
+  const upsert = db.prepare(`
+    INSERT INTO daily_logs
+      (id, user_id, date, weight, condition_level, bowel_moved, updated_at, deleted_at, server_seq)
+    VALUES
+      (@id, @userId, @date, @weight, @condition, @bowelMoved, @updatedAt, @deletedAt, @seq)
+    ON CONFLICT(id) DO UPDATE SET
+      user_id = excluded.user_id,
+      date = excluded.date,
+      weight = excluded.weight,
+      condition_level = excluded.condition_level,
+      bowel_moved = excluded.bowel_moved,
+      updated_at = excluded.updated_at,
+      deleted_at = excluded.deleted_at,
+      server_seq = excluded.server_seq;
+  `);
+
+  for (const log of request.changes.dailyLogs) {
+    if (log.userId !== request.userId) {
+      throw new ValidationError(`daily log ${log.id} belongs to another user: ${log.userId}`);
+    }
+
+    const existing = (selectById.get(log.id) ??
+      selectByKey.get(log.userId, log.date)) as ExistingRow | undefined;
+
+    if (existing && serverWins(existing.updated_at, log.updatedAt)) {
+      // サーバー側の行をそのまま返したいので、採用しなかったのはサーバー側のid。
+      rejected.dailyLogs.push(existing.id);
+      continue;
+    }
+
+    if (existing && existing.id !== log.id) {
+      deleteById.run(existing.id);
+    }
+
+    upsert.run({
+      id: log.id,
+      userId: log.userId,
+      date: log.date,
+      weight: log.weight,
+      condition: log.condition,
+      bowelMoved: log.bowelMoved === null ? null : log.bowelMoved ? 1 : 0,
+      updatedAt: log.updatedAt,
+      deletedAt: log.deletedAt,
+      seq,
+    });
+  }
+}
+
 // 他人のデータを書き換えられないよう、記録・自己ベストがぶら下がる種目の持ち主を確認する。
 function requireOwnedExercise(
   db: Database,
@@ -374,6 +444,17 @@ interface SetLogRow {
   time_sec: number | null;
   distance_km: number | null;
   rpe: number | null;
+}
+
+interface DailyLogRow {
+  id: string;
+  user_id: string;
+  date: string;
+  weight: number | null;
+  condition_level: number | null;
+  bowel_moved: number | null;
+  updated_at: string;
+  deleted_at: string | null;
 }
 
 interface PersonalRecordRow {
@@ -481,6 +562,23 @@ function pullChanges(
     type: row.type,
     value: row.value,
     achievedAt: row.achieved_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+  }));
+
+  const dailyLogRows = db
+    .prepare(
+      `SELECT * FROM daily_logs
+       WHERE user_id = ? AND (server_seq > ?${idFilter("id", rejected.dailyLogs)});`
+    )
+    .all(userId, since, ...rejected.dailyLogs) as DailyLogRow[];
+  changes.dailyLogs = dailyLogRows.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    date: row.date,
+    weight: row.weight,
+    condition: row.condition_level,
+    bowelMoved: row.bowel_moved === null ? null : row.bowel_moved === 1,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
   }));

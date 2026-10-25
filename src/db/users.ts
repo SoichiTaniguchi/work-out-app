@@ -39,7 +39,7 @@ export async function updateUser(
 }
 
 // 論理削除。FKの ON DELETE CASCADE は物理削除でしか働かないので、配下のプログラム・種目と
-// その記録・自己ベストにも明示的に deleted_at を打つ。
+// その記録・自己ベスト、日次記録にも明示的に deleted_at を打つ。
 export async function deleteUser(db: SQLiteDatabase, id: string): Promise<void> {
   const now = nowIso();
 
@@ -66,6 +66,11 @@ export async function deleteUser(db: SQLiteDatabase, id: string): Promise<void> 
     );
     await db.runAsync(
       "UPDATE folders SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL;",
+      [now, now, id]
+    );
+    // 日次記録(体重・体調・排便)はユーザーに直接ぶら下がる
+    await db.runAsync(
+      "UPDATE daily_logs SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL;",
       [now, now, id]
     );
     await db.runAsync("UPDATE users SET deleted_at = ?, updated_at = ? WHERE id = ?;", [

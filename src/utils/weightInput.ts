@@ -34,11 +34,29 @@ export function applyWeightKey(current: string, key: WeightKey): string {
   return next;
 }
 
-// 保存する数値。未入力と、数値として完成していない入力("68." など)は null。
+// 打ち間違いを保存しないための範囲。人の体重として現実的な幅にしている。
+export const MIN_WEIGHT = 20;
+export const MAX_WEIGHT = 300;
+
+// 保存する数値。未入力・未完成の入力("68." など)・範囲外は null を返す。
 export function parseWeightInput(input: string): number | null {
   if (input === "" || input.endsWith(".")) return null;
   const value = Number(input);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  if (!Number.isFinite(value)) return null;
+  if (value < MIN_WEIGHT || value > MAX_WEIGHT) return null;
+  return value;
+}
+
+// 入力はあるのに保存できない理由。未入力のときは null(そのまま保存してよい)。
+export function weightInputError(input: string): string | null {
+  if (input === "") return null;
+  if (input.endsWith(".")) return "小数点のあとに数字を入れてください";
+  const value = Number(input);
+  if (!Number.isFinite(value)) return "数字を入れてください";
+  if (value < MIN_WEIGHT || value > MAX_WEIGHT) {
+    return `${MIN_WEIGHT}〜${MAX_WEIGHT}kg の範囲で入れてください`;
+  }
+  return null;
 }
 
 // 保存済みの体重を入力欄の文字列に戻す。
