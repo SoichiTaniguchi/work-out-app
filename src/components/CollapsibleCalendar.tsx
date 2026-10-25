@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, View, Text, Pressable, PanResponder, StyleSheet } from "react-native";
+import Svg, { Line, Rect } from "react-native-svg";
 import { useSQLiteContext } from "expo-sqlite";
 import { useIsFocused } from "@react-navigation/native";
 import { colors } from "@/theme/colors";
@@ -29,6 +30,18 @@ interface YearMonth {
 function shiftMonth({ year, month }: YearMonth, delta: number): YearMonth {
   const date = new Date(year, month + delta, 1);
   return { year: date.getFullYear(), month: date.getMonth() };
+}
+
+// 展開・折りたたみボタンのアイコン(案3: カレンダーの形)
+function CalendarIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Rect x={3} y={5} width={18} height={16} rx={3} stroke={color} strokeWidth={1.6} />
+      <Line x1={3} y1={10} x2={21} y2={10} stroke={color} strokeWidth={1.6} />
+      <Line x1={8} y1={3} x2={8} y2={7} stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Line x1={16} y1={3} x2={16} y2={7} stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+    </Svg>
+  );
 }
 
 const HEADER_DAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -137,7 +150,7 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
         </Pressable>
         {expandable && (
           <Pressable style={styles.toggle} onPress={toggle} hitSlop={12}>
-            <Text style={styles.toggleText}>{expanded ? "▴" : "▾"}</Text>
+            <CalendarIcon color={expanded ? colors.link : colors.textPrimary} />
           </Pressable>
         )}
       </View>
@@ -217,17 +230,7 @@ const styles = StyleSheet.create({
   arrow: { fontSize: 20, color: colors.textPrimary, paddingHorizontal: 6 },
   arrowDisabled: { color: colors.textFaint },
   clip: { marginHorizontal: -10, paddingHorizontal: 10, overflow: "hidden" },
-  toggle: {
-    marginLeft: "auto",
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toggleText: { fontSize: 22, lineHeight: 26, color: colors.link },
+  toggle: { marginLeft: "auto", padding: 4 },
   weekRow: { flexDirection: "row" },
   weekdayLabel: { flex: 1, textAlign: "center", fontSize: 10, color: colors.textMuted },
   dayCell: { flex: 1, alignItems: "center", paddingVertical: 0 },
