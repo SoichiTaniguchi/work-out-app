@@ -13,11 +13,22 @@ import {
   type LatestPersonalRecord,
 } from "@/db/stats";
 import { PR_LABELS } from "@/constants/recordFields";
+import { getDailyLog, type DailyLog } from "@/db/dailyLogs";
 import CollapsibleCalendar from "@/components/CollapsibleCalendar";
 import { formatDateLabel, startOfWeekIso, todayKey } from "@/utils/dateRange";
 import { runSyncQuietly } from "@/sync/runSync";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
+
+function formatDailyLogSummary(log: DailyLog | null): string {
+  if (!log) return "未記録";
+  const parts = [
+    log.weight !== null ? `${log.weight.toFixed(1)} kg` : null,
+    log.condition !== null ? `体調 ${log.condition}` : null,
+    log.bowelMoved === null ? null : log.bowelMoved ? "排便 あり" : "排便 なし",
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" ／ ") : "未記録";
+}
 
 function formatPrValue(record: LatestPersonalRecord): string {
   const unit = record.type === "maxReps" ? "回" : "kg";
@@ -34,6 +45,7 @@ export default function HomeScreen({ navigation, route }: Props) {
   const [summaries, setSummaries] = useState<FolderSummary[]>([]);
   const [weekly, setWeekly] = useState<WorkoutStats>({ exerciseCount: 0, volume: 0 });
   const [latestPr, setLatestPr] = useState<LatestPersonalRecord | null>(null);
+  const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
 
   const reload = useCallback(async () => {
     const [user, folderSummaries, weeklyStats, pr] = await Promise.all([
@@ -48,14 +60,26 @@ export default function HomeScreen({ navigation, route }: Props) {
     setLatestPr(pr);
   }, [db, userId]);
 
+  // 選択日の体重・体調・排便。日付を変えたときと、入力画面から戻ったとき(focus)に読み直す。
+  const loadDailyLog = useCallback(async () => {
+    setDailyLog(await getDailyLog(db, userId, selectedDate));
+  }, [db, userId, selectedDate]);
+
   useEffect(() => {
     reload();
   }, [reload]);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", reload);
+    loadDailyLog();
+  }, [loadDailyLog]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      reload();
+      loadDailyLog();
+    });
     return unsubscribe;
-  }, [navigation, reload]);
+  }, [navigation, reload, loadDailyLog]);
 
   // 起動してユーザーを選んだ直後に一度だけ自動同期する(仕様書「アプリ起動時に自動同期」)。
   // 画面に戻るたびには走らせない。失敗しても黙って次の機会に回す。
@@ -87,6 +111,19 @@ export default function HomeScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <Pressable
+          style={styles.dailyCard}
+          onPress={() => navigation.navigate("DailyLog", { userId, date: selectedDate })}
+        >
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={styles.cardLabel}>体重・体調・排便</Text>
+            <Text style={dailyLog ? styles.dailyValue : styles.dailyEmpty}>
+              {formatDailyLogSummary(dailyLog)}
+            </Text>
+          </View>
+          <Text style={styles.dailyAction}>{dailyLog ? "編集 ›" : "記録する ›"}</Text>
+        </Pressable>
+
         <Text style={styles.sectionTitle}>{formatDateLabel(selectedDate)}の記録 — プログラムを選ぶ</Text>
         {summaries.length === 0 ? (
           <Pressable
@@ -120,6 +157,13 @@ export default function HomeScreen({ navigation, route }: Props) {
           onPress={() => navigation.navigate("FolderList", { userId })}
         >
           <Text style={styles.manageLinkText}>プログラム/種目を管理 ›</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.manageLink}
+          onPress={() => navigation.navigate("DailyLogHistory", { userId })}
+        >
+          <Text style={styles.manageLinkText}>体重・体調の履歴 ›</Text>
         </Pressable>
 
         <View style={styles.row}>
@@ -169,6 +213,19 @@ const styles = StyleSheet.create({
   cardLabel: { fontSize: 11, color: colors.textMuted },
   cardTitle: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
   cardDesc: { fontSize: 12, color: colors.textSecondary },
+  dailyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 12,
+    padding: 16,
+  },
+  dailyValue: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  dailyEmpty: { fontSize: 14, color: colors.textFaint },
+  dailyAction: { fontSize: 13, color: colors.link, fontWeight: "600" },
   emptyCard: {
     alignItems: "center",
     justifyContent: "center",
