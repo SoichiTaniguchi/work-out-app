@@ -11,7 +11,7 @@ import {
   monthWeeks,
   noonIso,
   weekKeys,
-} from "../../src/utils/dateRange.ts";
+} from "../../src/utils/dateRange.js";
 
 describe("dayRangeIso", () => {
   it("ローカルの0時〜翌0時を返す", () => {
