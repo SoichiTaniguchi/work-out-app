@@ -318,6 +318,63 @@ describe("POST /sync", () => {
     assert.equal(body.changes.dailyLogs[0]?.deletedAt, T3);
   });
 
+  it("2台が同じ日の違う項目を記録しても、先に入れた項目が消えない", async () => {
+    // 1台目: 朝に体重だけ記録して同期した
+    await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        users: [user(ALICE, "そーいち", T1)],
+        dailyLogs: [dailyLog("dlA", "2026-10-26", 68.4, "2026-10-26T07:00:00.000Z")],
+      }),
+    });
+
+    // 2台目: 1台目の分を受け取る前に、夜に体調だけ記録した(その端末では体重はnull)
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        dailyLogs: [
+          dailyLog("dlB", "2026-10-26", null, "2026-10-26T22:00:00.000Z", { condition: 4 }),
+        ],
+      }),
+    });
+
+    const log = body.changes.dailyLogs.find((row) => row.date === "2026-10-26");
+    assert.equal(log?.weight, 68.4, "朝に入れた体重が夜の記録で消えない");
+    assert.equal(log?.condition, 4, "夜に入れた体調も残る");
+
+    const rows = server.db
+      .prepare("SELECT COUNT(*) as count FROM daily_logs WHERE user_id = ? AND date = ?;")
+      .get(ALICE, "2026-10-26") as { count: number };
+    assert.equal(rows.count, 1, "1日1行のまま");
+  });
+
+  it("あとから入れ直した値は上書きする", async () => {
+    await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        users: [user(ALICE, "そーいち", T1)],
+        dailyLogs: [dailyLog("dlA", "2026-10-26", 68.4, T1, { condition: 4, bowelMoved: true })],
+      }),
+    });
+
+    // 同じ端末で測り直した。未入力ではなく入れ直した値なので、新しい方を採用する
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        dailyLogs: [dailyLog("dlA", "2026-10-26", 67.9, T2, { condition: 2, bowelMoved: false })],
+      }),
+    });
+
+    const log = body.changes.dailyLogs.find((row) => row.date === "2026-10-26");
+    assert.equal(log?.weight, 67.9);
+    assert.equal(log?.condition, 2);
+    assert.equal(log?.bowelMoved, false, "排便の「なし」は未入力と区別して上書きされる");
+  });
+
   it("他のユーザーの日次記録は書き換えられない", async () => {
     await seed(server.baseUrl);
 

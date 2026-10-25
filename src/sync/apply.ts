@@ -157,11 +157,13 @@ export async function applyRemoteChanges(
       applied += 1;
     }
     for (const log of changes.dailyLogs) {
-      if (!(await isNewer(db, "daily_logs", log.id, log.updatedAt))) continue;
       if (!(await userExists(db, log.userId))) continue;
 
-      // UNIQUE(user_id, date) があるため、同じ日の別idの行は先に片付ける
-      // (2台の端末が同じ日の記録を別々に作った場合)。
+      // 同じ日の記録は、idが違っても1行にまとめる(2台が別々に作った場合)。
+      // 新しさの判定も、id ではなくこの行と比べる。
+      const existing = await findDailyLog(db, log.id, log.userId, log.date);
+      if (existing && existing.updated_at >= log.updatedAt) continue;
+
       await db.runAsync(
         "DELETE FROM daily_logs WHERE user_id = ? AND date = ? AND id <> ?;",
         [log.userId, log.date, log.id]
@@ -182,9 +184,16 @@ export async function applyRemoteChanges(
           log.id,
           log.userId,
           log.date,
-          log.weight,
-          log.condition,
-          log.bowelMoved === null ? null : log.bowelMoved ? 1 : 0,
+          // 1行に3項目あるので、行ごとの上書きだけでは片方が消える(サーバー側と同じ扱い)。
+          // nullは「まだ記録していない」なので、既存の値を残す。
+          log.weight ?? existing?.weight ?? null,
+          log.condition ?? existing?.condition_level ?? null,
+          // 排便の「なし」(false)は未入力ではないので、0として上書きする
+          log.bowelMoved === null
+            ? existing?.bowel_moved ?? null
+            : log.bowelMoved
+              ? 1
+              : 0,
           log.updatedAt,
           log.deletedAt,
         ]
@@ -198,7 +207,7 @@ export async function applyRemoteChanges(
 
 async function isNewer(
   db: SQLiteDatabase,
-  table: "users" | "folders" | "exercises" | "workout_logs" | "personal_records" | "daily_logs",
+  table: "users" | "folders" | "exercises" | "workout_logs" | "personal_records",
   id: string,
   updatedAt: string
 ): Promise<boolean> {
@@ -207,6 +216,34 @@ async function isNewer(
     [id]
   );
   return row === null || updatedAt > row.updated_at;
+}
+
+interface ExistingDailyLog {
+  id: string;
+  updated_at: string;
+  weight: number | null;
+  condition_level: number | null;
+  bowel_moved: number | null;
+}
+
+// 同じ日の記録を探す。idが一致する行が無ければ、同じ日付の行(別idで作られたもの)を使う。
+async function findDailyLog(
+  db: SQLiteDatabase,
+  id: string,
+  userId: string,
+  date: string
+): Promise<ExistingDailyLog | null> {
+  const columns = "id, updated_at, weight, condition_level, bowel_moved";
+  const byId = await db.getFirstAsync<ExistingDailyLog>(
+    `SELECT ${columns} FROM daily_logs WHERE id = ?;`,
+    [id]
+  );
+  if (byId) return byId;
+
+  return await db.getFirstAsync<ExistingDailyLog>(
+    `SELECT ${columns} FROM daily_logs WHERE user_id = ? AND date = ?;`,
+    [userId, date]
+  );
 }
 
 // ユーザーがこの端末に無い日次記録は、外部キーで落ちるので飛ばす。

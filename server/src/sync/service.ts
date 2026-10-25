@@ -320,17 +320,24 @@ function pushPersonalRecords(
   }
 }
 
+interface ExistingDailyLogRow extends ExistingRow {
+  weight: number | null;
+  condition_level: number | null;
+  bowel_moved: number | null;
+}
+
 function pushDailyLogs(
   db: Database,
   request: SyncRequest,
   seq: number,
   rejected: RejectedIds
 ): void {
-  const selectById = db.prepare("SELECT id, updated_at FROM daily_logs WHERE id = ?;");
+  const columns = "id, updated_at, weight, condition_level, bowel_moved";
+  const selectById = db.prepare(`SELECT ${columns} FROM daily_logs WHERE id = ?;`);
   // 同じ日の記録を2台の端末が別々に作ると、idが違う行が UNIQUE(user_id, date) でぶつかる。
   // そのため自己ベストと同じく、日付の粒度でも既存行を探す。
   const selectByKey = db.prepare(
-    "SELECT id, updated_at FROM daily_logs WHERE user_id = ? AND date = ?;"
+    `SELECT ${columns} FROM daily_logs WHERE user_id = ? AND date = ?;`
   );
   const deleteById = db.prepare("DELETE FROM daily_logs WHERE id = ?;");
   const upsert = db.prepare(`
@@ -355,7 +362,7 @@ function pushDailyLogs(
     }
 
     const existing = (selectById.get(log.id) ??
-      selectByKey.get(log.userId, log.date)) as ExistingRow | undefined;
+      selectByKey.get(log.userId, log.date)) as ExistingDailyLogRow | undefined;
 
     if (existing && serverWins(existing.updated_at, log.updatedAt)) {
       // サーバー側の行をそのまま返したいので、採用しなかったのはサーバー側のid。
@@ -371,9 +378,19 @@ function pushDailyLogs(
       id: log.id,
       userId: log.userId,
       date: log.date,
-      weight: log.weight,
-      condition: log.condition,
-      bowelMoved: log.bowelMoved === null ? null : log.bowelMoved ? 1 : 0,
+      // 1行に3項目あるので、行ごとのLast Write Winsだけでは片方が消える。
+      // 1台目が朝に体重、2台目が夜に体調だけ入れると、後から来た行が体重をnullで上書きしてしまう。
+      // アプリに項目を消す操作は無く、nullは必ず「まだ記録していない」なので、
+      // nullの項目は既存の値を残す。日ごと全体を消すときは deleted_at を使う。
+      weight: log.weight ?? existing?.weight ?? null,
+      condition: log.condition ?? existing?.condition_level ?? null,
+      // 排便の「なし」(false)は未入力ではないので、0として上書きする
+      bowelMoved:
+        log.bowelMoved === null
+          ? existing?.bowel_moved ?? null
+          : log.bowelMoved
+            ? 1
+            : 0,
       updatedAt: log.updatedAt,
       deletedAt: log.deletedAt,
       seq,
