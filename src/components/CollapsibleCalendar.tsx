@@ -87,6 +87,13 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     setExpanded(!expanded);
   };
 
+  // 「今日」に戻る。月表示のときは今日の月も表示する
+  const goToday = () => {
+    const t = parseDateKey(today);
+    onSelect(today);
+    setViewMonth({ year: t.getFullYear(), month: t.getMonth() });
+  };
+
   // 週表示の前後移動は1週間、月表示は1か月
   const move = (delta: number) => {
     if (expanded) setViewMonth(shiftMonth(viewMonth, delta));
@@ -148,11 +155,18 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
         <Pressable onPress={() => move(1)} hitSlop={10} disabled={nextDisabled}>
           <Text style={[styles.arrow, nextDisabled && styles.arrowDisabled]}>›</Text>
         </Pressable>
-        {expandable && (
-          <Pressable style={styles.toggle} onPress={toggle} hitSlop={12}>
-            <CalendarIcon color={expanded ? colors.link : colors.textPrimary} />
-          </Pressable>
-        )}
+        <View style={styles.rightActions}>
+          {selected !== today && (
+            <Pressable onPress={goToday} hitSlop={10}>
+              <Text style={styles.todayText}>今日</Text>
+            </Pressable>
+          )}
+          {expandable && (
+            <Pressable style={styles.toggle} onPress={toggle} hitSlop={12}>
+              <CalendarIcon color={expanded ? colors.link : colors.textPrimary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <View style={styles.weekRow}>
@@ -230,7 +244,9 @@ const styles = StyleSheet.create({
   arrow: { fontSize: 20, color: colors.textPrimary, paddingHorizontal: 6 },
   arrowDisabled: { color: colors.textFaint },
   clip: { marginHorizontal: -10, paddingHorizontal: 10, overflow: "hidden" },
-  toggle: { marginLeft: "auto", padding: 4 },
+  rightActions: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 12 },
+  todayText: { fontSize: 14, fontWeight: "500", color: colors.link },
+  toggle: { padding: 4 },
   weekRow: { flexDirection: "row" },
   weekdayLabel: { flex: 1, textAlign: "center", fontSize: 10, color: colors.textMuted },
   dayCell: { flex: 1, alignItems: "center", paddingVertical: 0 },
