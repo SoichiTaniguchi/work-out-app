@@ -148,6 +148,8 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
         ))}
       </View>
 
+      {/* 外枠の内側でだけ見えるように切り抜く(スワイプ中の週が枠からはみ出さない) */}
+      <View style={styles.clip}>
       <Animated.View
         onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
         style={{ transform: [{ translateX: dragX }] }}
@@ -190,6 +192,7 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
           </View>
         ))}
       </Animated.View>
+      </View>
     </View>
   );
 }
@@ -213,6 +216,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
   arrow: { fontSize: 20, color: colors.textPrimary, paddingHorizontal: 6 },
   arrowDisabled: { color: colors.textFaint },
+  clip: { marginHorizontal: -10, paddingHorizontal: 10, overflow: "hidden" },
   toggle: {
     marginLeft: "auto",
     width: 34,
