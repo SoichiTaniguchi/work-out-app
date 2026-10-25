@@ -130,11 +130,17 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           case "$RESULT" in
-            started)
+            started | started-shared)
               body="📱 NASでこのPRを配信しました(\`${SHA:0:7}\`)。
 
-          Expo Goで \`$PREVIEW_URL\` を開いてください。初回はバンドルに1分ほどかかります。
-          試し終わったら \`/preview stop\` とコメントするか、PRを閉じると止まります。" ;;
+          Expo Goで \`$PREVIEW_URL\` を開いてください(一覧では「筋トレ記録 (PR #$PR)」と表示されます)。
+          初回はバンドルに1分ほどかかります。
+          試し終わったら \`/preview stop\` とコメントするか、PRを閉じると止まります。"
+              if [ "$RESULT" = started-shared ]; then
+                body="$body
+
+          ⚠️ **このブランチは本番とデータを共有します。** プレビュー用にデータを分ける仕組みより前に作られたブランチのためです。記録・削除はせず、mainを取り込んでから試してください。"
+              fi ;;
             stopped) body="プレビューを止めました。" ;;
             *) body="⚠️ プレビューに失敗しました。ログ: $RUN_URL" ;;
           esac
