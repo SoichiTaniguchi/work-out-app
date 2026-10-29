@@ -81,11 +81,25 @@ export function createSchema(db: Database): void {
       UNIQUE (exercise_id, type)
     );
 
+    CREATE TABLE IF NOT EXISTS daily_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      weight REAL,
+      condition_level INTEGER,
+      bowel_moved INTEGER,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      server_seq INTEGER NOT NULL,
+      UNIQUE (user_id, date)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_seq ON users (server_seq);
     CREATE INDEX IF NOT EXISTS idx_folders_seq ON folders (server_seq);
     CREATE INDEX IF NOT EXISTS idx_exercises_seq ON exercises (server_seq);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_seq ON workout_logs (server_seq);
     CREATE INDEX IF NOT EXISTS idx_personal_records_seq ON personal_records (server_seq);
+    CREATE INDEX IF NOT EXISTS idx_daily_logs_seq ON daily_logs (server_seq);
 
     INSERT OR IGNORE INTO sync_state (id, last_seq) VALUES (1, 0);
   `);

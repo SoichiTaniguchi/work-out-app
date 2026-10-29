@@ -6,6 +6,7 @@ import { openDatabase } from "../src/db/open.js";
 import {
   emptyChanges,
   type SyncChanges,
+  type SyncDailyLog,
   type SyncExercise,
   type SyncFolder,
   type SyncPersonalRecord,
@@ -139,5 +140,24 @@ export function personalRecord(
     achievedAt: updatedAt,
     updatedAt,
     deletedAt,
+  };
+}
+
+export function dailyLog(
+  id: string,
+  date: string,
+  weight: number | null,
+  updatedAt: string,
+  options: { condition?: number | null; bowelMoved?: boolean | null; deletedAt?: string | null } = {}
+): SyncDailyLog {
+  return {
+    id,
+    userId: ALICE,
+    date,
+    weight,
+    condition: options.condition ?? null,
+    bowelMoved: options.bowelMoved ?? null,
+    updatedAt,
+    deletedAt: options.deletedAt ?? null,
   };
 }

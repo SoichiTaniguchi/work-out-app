@@ -12,6 +12,8 @@ import SummaryScreen from "@/screens/SummaryScreen";
 import ExerciseEditScreen from "@/screens/ExerciseEditScreen";
 import ExercisePickerScreen from "@/screens/ExercisePickerScreen";
 import FolderEditScreen from "@/screens/FolderEditScreen";
+import DailyLogScreen from "@/screens/DailyLogScreen";
+import DailyLogHistoryScreen from "@/screens/DailyLogHistoryScreen";
 
 // 画面遷移図(仕様書)に対応するスタック定義
 export type RootStackParamList = {
@@ -27,6 +29,9 @@ export type RootStackParamList = {
   ExerciseEdit: { exerciseId?: string; folderId?: string; initialBodyPart?: string };
   ExercisePicker: { folderId: string };
   FolderEdit: { folderId?: string; userId: string };
+  // 体重・体調・排便の入力(モーダル)。date は "YYYY-MM-DD"
+  DailyLog: { userId: string; date: string };
+  DailyLogHistory: { userId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -45,6 +50,8 @@ export default function RootNavigator() {
       <Stack.Screen name="ExerciseEdit" component={ExerciseEditScreen} options={{ presentation: "modal" }} />
       <Stack.Screen name="ExercisePicker" component={ExercisePickerScreen} options={{ presentation: "modal" }} />
       <Stack.Screen name="FolderEdit" component={FolderEditScreen} options={{ presentation: "modal" }} />
+      <Stack.Screen name="DailyLog" component={DailyLogScreen} options={{ presentation: "modal" }} />
+      <Stack.Screen name="DailyLogHistory" component={DailyLogHistoryScreen} />
     </Stack.Navigator>
   );
 }

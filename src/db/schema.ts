@@ -8,7 +8,7 @@ const SEED_USERS = [
   { id: "u3", name: "お母さん" },
 ];
 
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -151,5 +151,26 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       await db.execAsync("PRAGMA user_version = 5;");
     });
     currentVersion = 5;
+  }
+
+  if (currentVersion < 6) {
+    await db.withTransactionAsync(async () => {
+      // 体重・体調・排便の日次記録。1日1行(user_id と date で一意)。
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS daily_logs (
+          id TEXT PRIMARY KEY NOT NULL,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date TEXT NOT NULL,
+          weight REAL,
+          condition_level INTEGER,
+          bowel_moved INTEGER,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT,
+          UNIQUE(user_id, date)
+        );
+      `);
+      await db.execAsync("PRAGMA user_version = 6;");
+    });
+    currentVersion = 6;
   }
 }

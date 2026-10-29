@@ -54,6 +54,17 @@ interface SetLogRow {
   rpe: number | null;
 }
 
+interface DailyLogRow {
+  id: string;
+  user_id: string;
+  date: string;
+  weight: number | null;
+  condition_level: number | null;
+  bowel_moved: number | null;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 interface PersonalRecordRow {
   id: string;
   exercise_id: string;
@@ -156,6 +167,21 @@ export async function collectLocalChanges(
     type: row.type,
     value: row.value,
     achievedAt: row.achieved_at,
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at,
+  }));
+
+  const dailyLogs = await db.getAllAsync<DailyLogRow>(
+    "SELECT * FROM daily_logs WHERE user_id = ? AND updated_at > ?;",
+    [userId, since]
+  );
+  changes.dailyLogs = dailyLogs.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    date: row.date,
+    weight: row.weight,
+    condition: row.condition_level,
+    bowelMoved: row.bowel_moved === null ? null : row.bowel_moved === 1,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
   }));

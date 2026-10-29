@@ -6,7 +6,8 @@ import type { SyncChanges } from "@/sync/types";
 // この端末で編集された行を潰さないよう、ローカルでも updated_at を比べて新しい方を残す。
 //
 // 親子関係(種目 → 記録)のため、users → exercises → folders → workout_logs →
-// personal_records の順に適用する。外部キーが有効なので順序を崩すと失敗する。
+// personal_records → daily_logs の順に適用する。外部キーが有効なので順序を崩すと失敗する。
+// daily_logs はユーザーに直接ぶら下がるだけなので、users の後ならどこでもよい。
 
 export async function applyRemoteChanges(
   db: SQLiteDatabase,
@@ -155,6 +156,50 @@ export async function applyRemoteChanges(
       );
       applied += 1;
     }
+    for (const log of changes.dailyLogs) {
+      if (!(await userExists(db, log.userId))) continue;
+
+      // 同じ日の記録は、idが違っても1行にまとめる(2台が別々に作った場合)。
+      // 新しさの判定も、id ではなくこの行と比べる。
+      const existing = await findDailyLog(db, log.id, log.userId, log.date);
+      if (existing && existing.updated_at >= log.updatedAt) continue;
+
+      await db.runAsync(
+        "DELETE FROM daily_logs WHERE user_id = ? AND date = ? AND id <> ?;",
+        [log.userId, log.date, log.id]
+      );
+      await db.runAsync(
+        `INSERT INTO daily_logs
+           (id, user_id, date, weight, condition_level, bowel_moved, updated_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           user_id = excluded.user_id,
+           date = excluded.date,
+           weight = excluded.weight,
+           condition_level = excluded.condition_level,
+           bowel_moved = excluded.bowel_moved,
+           updated_at = excluded.updated_at,
+           deleted_at = excluded.deleted_at;`,
+        [
+          log.id,
+          log.userId,
+          log.date,
+          // 1行に3項目あるので、行ごとの上書きだけでは片方が消える(サーバー側と同じ扱い)。
+          // nullは「まだ記録していない」なので、既存の値を残す。
+          log.weight ?? existing?.weight ?? null,
+          log.condition ?? existing?.condition_level ?? null,
+          // 排便の「なし」(false)は未入力ではないので、0として上書きする
+          log.bowelMoved === null
+            ? existing?.bowel_moved ?? null
+            : log.bowelMoved
+              ? 1
+              : 0,
+          log.updatedAt,
+          log.deletedAt,
+        ]
+      );
+      applied += 1;
+    }
   });
 
   return applied;
@@ -171,6 +216,43 @@ async function isNewer(
     [id]
   );
   return row === null || updatedAt > row.updated_at;
+}
+
+interface ExistingDailyLog {
+  id: string;
+  updated_at: string;
+  weight: number | null;
+  condition_level: number | null;
+  bowel_moved: number | null;
+}
+
+// 同じ日の記録を探す。idが一致する行が無ければ、同じ日付の行(別idで作られたもの)を使う。
+async function findDailyLog(
+  db: SQLiteDatabase,
+  id: string,
+  userId: string,
+  date: string
+): Promise<ExistingDailyLog | null> {
+  const columns = "id, updated_at, weight, condition_level, bowel_moved";
+  const byId = await db.getFirstAsync<ExistingDailyLog>(
+    `SELECT ${columns} FROM daily_logs WHERE id = ?;`,
+    [id]
+  );
+  if (byId) return byId;
+
+  return await db.getFirstAsync<ExistingDailyLog>(
+    `SELECT ${columns} FROM daily_logs WHERE user_id = ? AND date = ?;`,
+    [userId, date]
+  );
+}
+
+// ユーザーがこの端末に無い日次記録は、外部キーで落ちるので飛ばす。
+// ユーザーは同じ応答の中で先に適用されるため、通常は起こらない。
+async function userExists(db: SQLiteDatabase, userId: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ id: string }>("SELECT id FROM users WHERE id = ?;", [
+    userId,
+  ]);
+  return row !== null;
 }
 
 // 種目がこの端末に無い記録・自己ベストは、外部キーで落ちるので飛ばす。

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
-import { colors } from "@/theme/colors";
+import { colors, conditionMeterFill } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { listWorkoutLogsSince, type WorkoutLogWithExercise } from "@/db/logs";
@@ -9,12 +9,26 @@ import { listPersonalRecordsSince, type PersonalRecordWithExercise } from "@/db/
 import { getWorkoutStatsSince, type WorkoutStats } from "@/db/stats";
 import { PR_LABELS } from "@/constants/recordFields";
 import { formatSetSummary } from "@/utils/recordFormat";
-import { startOfTodayIso } from "@/utils/dateRange";
+import { startOfTodayIso, todayKey } from "@/utils/dateRange";
+import { getDailyLog, type DailyLog } from "@/db/dailyLogs";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Summary">;
 
 function formatPrValue(record: PersonalRecordWithExercise): string {
   return record.type === "maxReps" ? `${record.value}回` : `${record.value}kg`;
+}
+
+const CONDITION_LEVELS = [1, 2, 3, 4, 5];
+
+// 体調が5段階のいくつかを図でも見せる。数字だけだと段階の幅が伝わらないため。
+function ConditionMeter({ level }: { level: number }) {
+  return (
+    <View style={styles.meter}>
+      {CONDITION_LEVELS.map((step) => (
+        <View key={step} style={[styles.meterStep, step <= level && styles.meterStepOn]} />
+      ))}
+    </View>
+  );
 }
 
 function totalSets(logs: WorkoutLogWithExercise[]): number {
@@ -28,22 +42,27 @@ export default function SummaryScreen({ navigation, route }: Props) {
   const [logs, setLogs] = useState<WorkoutLogWithExercise[]>([]);
   const [records, setRecords] = useState<PersonalRecordWithExercise[]>([]);
   const [stats, setStats] = useState<WorkoutStats>({ exerciseCount: 0, volume: 0 });
+  const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
 
   useEffect(() => {
     (async () => {
       const since = startOfTodayIso();
-      const [todayLogs, todayRecords, todayStats] = await Promise.all([
+      const [todayLogs, todayRecords, todayStats, todayDailyLog] = await Promise.all([
         listWorkoutLogsSince(db, userId, since),
         listPersonalRecordsSince(db, userId, since),
         getWorkoutStatsSince(db, userId, since),
+        getDailyLog(db, userId, todayKey()),
       ]);
       setLogs(todayLogs);
       setRecords(todayRecords);
       setStats(todayStats);
+      setDailyLog(todayDailyLog);
     })();
   }, [db, userId]);
 
   const today = new Date();
+  // 排便しか入っていない日は「未記録」として扱う(この画面では排便を出さないため)
+  const hasBodyLog = dailyLog !== null && (dailyLog.weight !== null || dailyLog.condition !== null);
 
   return (
     <View style={styles.container}>
@@ -75,6 +94,41 @@ export default function SummaryScreen({ navigation, route }: Props) {
             <Text style={styles.statUnit}>kg</Text>
           </View>
         </View>
+
+        {/* その日の体の記録。トレーニングの数字とは別のものなのでカードを分ける。
+            排便はこの画面には出さない(まとめは人に見せることもあるため)。 */}
+        {hasBodyLog ? (
+          <View style={styles.bodyCard}>
+            <Text style={styles.bodySectionTitle}>今日の体調</Text>
+            <View style={styles.bodyRow}>
+              <Text style={styles.bodyKey}>体重</Text>
+              <Text style={dailyLog?.weight !== null ? styles.bodyValue : styles.bodyValueEmpty}>
+                {dailyLog?.weight !== null && dailyLog?.weight !== undefined
+                  ? `${dailyLog.weight.toFixed(1)} kg`
+                  : "-"}
+              </Text>
+            </View>
+            <View style={styles.bodyRow}>
+              <Text style={styles.bodyKey}>体調</Text>
+              {dailyLog !== null && dailyLog.condition !== null ? (
+                <View style={styles.bodyConditionValue}>
+                  <Text style={styles.bodyValue}>{dailyLog.condition} / 5</Text>
+                  <ConditionMeter level={dailyLog.condition} />
+                </View>
+              ) : (
+                <Text style={styles.bodyValueEmpty}>-</Text>
+              )}
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            style={styles.bodyPrompt}
+            onPress={() => navigation.navigate("DailyLog", { userId, date: todayKey() })}
+          >
+            <Text style={styles.bodyPromptText}>体重・体調は未記録</Text>
+            <Text style={styles.bodyPromptAction}>記録する ›</Text>
+          </Pressable>
+        )}
 
         {records.length > 0 && (
           <View style={styles.prCard}>
@@ -140,6 +194,41 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: "700", color: colors.textPrimary, marginTop: 2 },
   statUnit: { fontSize: 10, color: colors.textFaint },
   sectionTitle: { fontSize: 13, fontWeight: "700", color: colors.textPrimary, marginTop: 8 },
+  bodyCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 14,
+    gap: 6,
+  },
+  bodySectionTitle: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  bodyRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  bodyKey: { fontSize: 13, color: colors.textMuted },
+  bodyValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    fontVariant: ["tabular-nums"],
+  },
+  bodyValueEmpty: { fontSize: 14, color: colors.textFaint },
+  bodyConditionValue: { flexDirection: "row", alignItems: "center", gap: 8 },
+  meter: { flexDirection: "row", gap: 3 },
+  meterStep: { width: 14, height: 10, borderRadius: 2, backgroundColor: colors.border },
+  meterStepOn: { backgroundColor: conditionMeterFill },
+  bodyPrompt: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.link,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  bodyPromptText: { fontSize: 13, color: colors.textSecondary },
+  bodyPromptAction: { fontSize: 13, color: colors.link, fontWeight: "700" },
   prCard: {
     borderWidth: 1,
     borderColor: colors.success,

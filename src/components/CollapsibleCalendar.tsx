@@ -3,8 +3,9 @@ import { Animated, View, Text, Pressable, PanResponder, StyleSheet } from "react
 import Svg, { Line, Rect } from "react-native-svg";
 import { useSQLiteContext } from "expo-sqlite";
 import { useIsFocused } from "@react-navigation/native";
-import { colors } from "@/theme/colors";
+import { colors, conditionTint } from "@/theme/colors";
 import { listLoggedDaysInMonth } from "@/db/logs";
+import { listConditionsInMonth } from "@/db/dailyLogs";
 import YearMonthPicker from "@/components/YearMonthPicker";
 import {
   addDays,
@@ -47,8 +48,8 @@ function CalendarIcon({ color }: { color: string }) {
 
 const HEADER_DAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
-// 初期は1週間分だけ表示し、▾ で月表示に展開する。記録がある日はドット、今日は枠、
-// 未来の日付はグレーで選べない。
+// 初期は1週間分だけ表示し、▾ で月表示に展開する。トレーニングの記録がある日は黒いドット、
+// 体調を記録した日は背景を緑の濃さで塗る。今日は枠、未来の日付はグレーで選べない。
 export default function CollapsibleCalendar({ userId, selected, onSelect, expandable = true }: Props) {
   const db = useSQLiteContext();
   const isFocused = useIsFocused();
@@ -59,6 +60,8 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     month: selectedDate.getMonth(),
   });
   const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
+  // 日付 → 体調(1〜5)。背景の濃さに使う。
+  const [conditions, setConditions] = useState<Record<string, number>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // 週表示のときは選択日の月、月表示のときは閲覧中の月を基準にする
@@ -66,20 +69,22 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
     ? viewMonth
     : { year: selectedDate.getFullYear(), month: selectedDate.getMonth() };
 
-  // 週をまたいで月が変わる日にもドットを出すため、前後1か月分も読む
-  const loadLoggedDays = useCallback(async () => {
+  // 週をまたいで月が変わる日にもドット・背景を出すため、前後1か月分も読む
+  const loadMarks = useCallback(async () => {
     const months = [-1, 0, 1].map((delta) => shiftMonth(anchor, delta));
-    const results = await Promise.all(
-      months.map((m) => listLoggedDaysInMonth(db, userId, m.year, m.month))
-    );
-    setLoggedDays(new Set(results.flat()));
+    const [dayResults, conditionResults] = await Promise.all([
+      Promise.all(months.map((m) => listLoggedDaysInMonth(db, userId, m.year, m.month))),
+      Promise.all(months.map((m) => listConditionsInMonth(db, userId, m.year, m.month))),
+    ]);
+    setLoggedDays(new Set(dayResults.flat()));
+    setConditions(Object.assign({}, ...conditionResults) as Record<string, number>);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, userId, anchor.year, anchor.month]);
 
-  // 記録画面から戻ったときにドットを更新する
+  // 記録画面・入力画面から戻ったときに更新する
   useEffect(() => {
-    if (isFocused) loadLoggedDays();
-  }, [isFocused, loadLoggedDays]);
+    if (isFocused) loadMarks();
+  }, [isFocused, loadMarks]);
 
   const today = todayKey();
   const weeks = expanded ? monthWeeks(viewMonth.year, viewMonth.month) : [weekKeys(selected)];
@@ -210,6 +215,7 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
               const isFuture = key > today;
               const isSelected = key === selected;
               const outOfMonth = expanded && parseDateKey(key).getMonth() !== viewMonth.month;
+              const tint = isFuture ? null : conditionTint(conditions[key]);
               return (
                 <Pressable
                   key={key}
@@ -221,6 +227,8 @@ export default function CollapsibleCalendar({ userId, selected, onSelect, expand
                   <View
                     style={[
                       styles.dayCircle,
+                      // 体調の背景は「今日」「選択中」より先に置き、選択中は黒で上書きする
+                      tint !== null && { backgroundColor: tint },
                       key === today && styles.dayToday,
                       isSelected && styles.daySelected,
                     ]}
@@ -304,5 +312,6 @@ const styles = StyleSheet.create({
   dayTextMuted: { color: colors.textFaint },
   dayTextSelected: { color: "#fff", fontWeight: "700" },
   dot: { width: 5, height: 5, borderRadius: 3, marginTop: 0, backgroundColor: "transparent" },
-  dotOn: { backgroundColor: colors.success },
+  // トレーニングの記録がある日。体調の背景色と区別するため黒にしている。
+  dotOn: { backgroundColor: colors.accent },
 });

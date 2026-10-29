@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   ALICE,
   changes,
+  dailyLog,
   exercise,
   folder,
   personalRecord,
@@ -28,6 +29,7 @@ async function seed(baseUrl: string): Promise<number> {
       folders: [folder("fd1", "胸の日", ["ex1"], T1)],
       workoutLogs: [workoutLog("wl1", "ex1", T1, [{ weight: 60, reps: 10 }])],
       personalRecords: [personalRecord("pr1", "ex1", 60, T1)],
+      dailyLogs: [dailyLog("dl1", "2026-10-18", 68.4, T1, { condition: 4, bowelMoved: true })],
     }),
   });
 
@@ -213,6 +215,197 @@ describe("POST /sync", () => {
 
     const brokenJson = await postSync(server.baseUrl, "{");
     assert.equal(brokenJson.status, 400);
+  });
+
+  it("体重・体調・排便の記録が2台目に届く", async () => {
+    await seed(server.baseUrl);
+
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({}),
+    });
+
+    const log = body.changes.dailyLogs[0];
+    assert.equal(log?.date, "2026-10-18");
+    assert.equal(log?.weight, 68.4);
+    assert.equal(log?.condition, 4);
+    assert.equal(log?.bowelMoved, true, "排便のあり/なしが真偽値のまま往復する");
+  });
+
+  it("未入力の項目はnullのまま往復する", async () => {
+    await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        users: [user(ALICE, "そーいち", T1)],
+        // 体重だけ入れて、体調と排便は未入力
+        dailyLogs: [dailyLog("dl1", "2026-10-20", 68.0, T1)],
+      }),
+    });
+
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({}),
+    });
+
+    const log = body.changes.dailyLogs[0];
+    assert.equal(log?.weight, 68.0);
+    assert.equal(log?.condition, null);
+    assert.equal(log?.bowelMoved, null, "未入力は0ではなくnullで戻る");
+  });
+
+  it("同じ日の記録を2台が別idで作っても1日1行に保たれる", async () => {
+    await seed(server.baseUrl);
+
+    // 2台目が同じ日(2026-10-18)を別のidで、あとから記録した
+    const { status, body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        dailyLogs: [dailyLog("dl2", "2026-10-18", 68.9, T2, { condition: 2 })],
+      }),
+    });
+
+    assert.equal(status, 200);
+    const rows = server.db
+      .prepare("SELECT id, weight FROM daily_logs WHERE user_id = ? AND date = ?;")
+      .all(ALICE, "2026-10-18") as { id: string; weight: number }[];
+    assert.equal(rows.length, 1, "同じ日の行が2つ残らない");
+    assert.equal(rows[0]?.id, "dl2");
+    assert.equal(rows[0]?.weight, 68.9);
+    assert.equal(body.changes.dailyLogs.length, 1);
+  });
+
+  it("同じ日に古い記録が届いたらサーバー側の行を返す(Last Write Wins)", async () => {
+    const cursor = await seed(server.baseUrl);
+
+    // 2台目が、同じ日の古い記録を別idで送ってきた
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: cursor,
+      changes: changes({
+        dailyLogs: [dailyLog("dl2", "2026-10-18", 70.0, "2026-10-18T09:00:00.000Z")],
+      }),
+    });
+
+    assert.equal(
+      body.changes.dailyLogs[0]?.id,
+      "dl1",
+      "採用しなかったので、サーバー側の行を返して端末の古い値を上書きさせる"
+    );
+    assert.equal(body.changes.dailyLogs[0]?.weight, 68.4);
+  });
+
+  it("日次記録の論理削除が相手の端末に伝わる", async () => {
+    const cursor = await seed(server.baseUrl);
+
+    await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: cursor,
+      changes: changes({
+        dailyLogs: [dailyLog("dl1", "2026-10-18", 68.4, T3, { deletedAt: T3 })],
+      }),
+    });
+
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: cursor,
+      changes: changes({}),
+    });
+
+    assert.equal(body.changes.dailyLogs[0]?.deletedAt, T3);
+  });
+
+  it("2台が同じ日の違う項目を記録しても、先に入れた項目が消えない", async () => {
+    // 1台目: 朝に体重だけ記録して同期した
+    await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        users: [user(ALICE, "そーいち", T1)],
+        dailyLogs: [dailyLog("dlA", "2026-10-26", 68.4, "2026-10-26T07:00:00.000Z")],
+      }),
+    });
+
+    // 2台目: 1台目の分を受け取る前に、夜に体調だけ記録した(その端末では体重はnull)
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        dailyLogs: [
+          dailyLog("dlB", "2026-10-26", null, "2026-10-26T22:00:00.000Z", { condition: 4 }),
+        ],
+      }),
+    });
+
+    const log = body.changes.dailyLogs.find((row) => row.date === "2026-10-26");
+    assert.equal(log?.weight, 68.4, "朝に入れた体重が夜の記録で消えない");
+    assert.equal(log?.condition, 4, "夜に入れた体調も残る");
+
+    const rows = server.db
+      .prepare("SELECT COUNT(*) as count FROM daily_logs WHERE user_id = ? AND date = ?;")
+      .get(ALICE, "2026-10-26") as { count: number };
+    assert.equal(rows.count, 1, "1日1行のまま");
+  });
+
+  it("あとから入れ直した値は上書きする", async () => {
+    await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        users: [user(ALICE, "そーいち", T1)],
+        dailyLogs: [dailyLog("dlA", "2026-10-26", 68.4, T1, { condition: 4, bowelMoved: true })],
+      }),
+    });
+
+    // 同じ端末で測り直した。未入力ではなく入れ直した値なので、新しい方を採用する
+    const { body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        dailyLogs: [dailyLog("dlA", "2026-10-26", 67.9, T2, { condition: 2, bowelMoved: false })],
+      }),
+    });
+
+    const log = body.changes.dailyLogs.find((row) => row.date === "2026-10-26");
+    assert.equal(log?.weight, 67.9);
+    assert.equal(log?.condition, 2);
+    assert.equal(log?.bowelMoved, false, "排便の「なし」は未入力と区別して上書きされる");
+  });
+
+  it("他のユーザーの日次記録は書き換えられない", async () => {
+    await seed(server.baseUrl);
+
+    const { status, body } = await postSync(server.baseUrl, {
+      userId: ALICE,
+      since: null,
+      changes: changes({
+        dailyLogs: [{ ...dailyLog("dl9", "2026-10-19", 68.0, T2), userId: "u2" }],
+      }),
+    });
+
+    // 持ち主違いはデータの不整合なので、形の誤り(400)ではなく409で返す
+    assert.equal(status, 409);
+    assert.match(body.error ?? "", /another user/);
+  });
+
+  it("体調が1〜5の外なら400で返す", async () => {
+    await seed(server.baseUrl);
+
+    for (const condition of [0, 6, 2.5]) {
+      const { status, body } = await postSync(server.baseUrl, {
+        userId: ALICE,
+        since: null,
+        changes: changes({
+          dailyLogs: [dailyLog("dl9", "2026-10-19", 68.0, T2, { condition })],
+        }),
+      });
+
+      assert.equal(status, 400, `体調 ${condition} は受け付けない`);
+      assert.match(body.error ?? "", /condition/);
+    }
   });
 });
 
