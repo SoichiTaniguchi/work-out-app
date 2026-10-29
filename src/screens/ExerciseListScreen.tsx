@@ -225,6 +225,9 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
       )}
 
       <DraggableFlatList
+        // ライブラリは内部のFlatListを高さ未指定のViewで包むため、flex:1を渡さないと
+        // 種目が増えたときにリストが画面より伸び、下のフッターが画面外に出る。
+        containerStyle={{ flex: 1 }}
         contentContainerStyle={styles.list}
         data={exercises}
         keyExtractor={(item) => item.id}
