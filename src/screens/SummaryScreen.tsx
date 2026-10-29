@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
-import { colors } from "@/theme/colors";
+import { colors, conditionMeterFill } from "@/theme/colors";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { listWorkoutLogsSince, type WorkoutLogWithExercise } from "@/db/logs";
@@ -16,6 +16,19 @@ type Props = NativeStackScreenProps<RootStackParamList, "Summary">;
 
 function formatPrValue(record: PersonalRecordWithExercise): string {
   return record.type === "maxReps" ? `${record.value}回` : `${record.value}kg`;
+}
+
+const CONDITION_LEVELS = [1, 2, 3, 4, 5];
+
+// 体調が5段階のいくつかを図でも見せる。数字だけだと段階の幅が伝わらないため。
+function ConditionMeter({ level }: { level: number }) {
+  return (
+    <View style={styles.meter}>
+      {CONDITION_LEVELS.map((step) => (
+        <View key={step} style={[styles.meterStep, step <= level && styles.meterStepOn]} />
+      ))}
+    </View>
+  );
 }
 
 function totalSets(logs: WorkoutLogWithExercise[]): number {
@@ -97,11 +110,14 @@ export default function SummaryScreen({ navigation, route }: Props) {
             </View>
             <View style={styles.bodyRow}>
               <Text style={styles.bodyKey}>体調</Text>
-              <Text style={dailyLog?.condition !== null ? styles.bodyValue : styles.bodyValueEmpty}>
-                {dailyLog?.condition !== null && dailyLog?.condition !== undefined
-                  ? `${dailyLog.condition} / 5`
-                  : "-"}
-              </Text>
+              {dailyLog !== null && dailyLog.condition !== null ? (
+                <View style={styles.bodyConditionValue}>
+                  <Text style={styles.bodyValue}>{dailyLog.condition} / 5</Text>
+                  <ConditionMeter level={dailyLog.condition} />
+                </View>
+              ) : (
+                <Text style={styles.bodyValueEmpty}>-</Text>
+              )}
             </View>
           </View>
         ) : (
@@ -195,6 +211,10 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   bodyValueEmpty: { fontSize: 14, color: colors.textFaint },
+  bodyConditionValue: { flexDirection: "row", alignItems: "center", gap: 8 },
+  meter: { flexDirection: "row", gap: 3 },
+  meterStep: { width: 14, height: 10, borderRadius: 2, backgroundColor: colors.border },
+  meterStepOn: { backgroundColor: conditionMeterFill },
   bodyPrompt: {
     flexDirection: "row",
     justifyContent: "space-between",
