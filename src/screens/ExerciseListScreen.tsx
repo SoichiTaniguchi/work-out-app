@@ -231,23 +231,22 @@ export default function ExerciseListScreen({ navigation, route }: Props) {
         renderItem={renderItem}
         onDragEnd={({ data }) => reorder(data.map((e) => e.id))}
         ListEmptyComponent={<Text style={styles.empty}>まだ種目がありません</Text>}
-        ListFooterComponent={
-          <>
-            <Pressable
-              style={styles.addRow}
-              onPress={() => navigation.navigate("ExercisePicker", { folderId })}
-            >
-              <Text style={styles.addText}>+ 種目を追加</Text>
-            </Pressable>
-
-            {userId && isToday && (
-              <Pressable style={styles.finishRow} onPress={finishWorkout}>
-                <Text style={styles.finishText}>今日のトレーニングを終了</Text>
-              </Pressable>
-            )}
-          </>
-        }
       />
+
+      <View style={styles.footer}>
+        <Pressable
+          style={styles.addRow}
+          onPress={() => navigation.navigate("ExercisePicker", { folderId })}
+        >
+          <Text style={styles.addText}>+ 種目を追加</Text>
+        </Pressable>
+
+        {userId && isToday && (
+          <Pressable style={styles.finishRow} onPress={finishWorkout}>
+            <Text style={styles.finishText}>今日のトレーニングを終了</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -269,6 +268,14 @@ const styles = StyleSheet.create({
   calendar: { paddingHorizontal: 20, paddingTop: 12 },
   plus: { fontSize: 20, color: colors.link, paddingHorizontal: 4 },
   list: { padding: 20, gap: 10 },
+  // Pinned below the list so the buttons stay reachable with many exercises.
+  footer: {
+    padding: 16,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -310,7 +317,6 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderColor: colors.textFaint,
     borderRadius: 12,
-    marginTop: 8,
   },
   addText: { color: colors.textMuted, fontSize: 14 },
   finishRow: {
