@@ -216,6 +216,13 @@ export default function RecordScreen({ navigation, route }: Props) {
     !row.prefilled &&
     (exercise?.fieldDefinition ?? []).some((field) => (row.values[field] ?? "").trim() !== "");
 
+  // 完了(チェック)には、RPE以外の記録項目がすべて入力されている必要がある。
+  // 重量などが空のままチェックすると、記録されていない値を完了扱いにしてしまうため。
+  const isCompletable = (row: SetRowState) =>
+    (exercise?.fieldDefinition ?? [])
+      .filter((field) => field !== "rpe")
+      .every((field) => (row.values[field] ?? "").trim() !== "");
+
   const buildSets = (rows: SetRowState[]): SetLog[] => {
     if (!exercise) return [];
     return rows
@@ -268,6 +275,7 @@ export default function RecordScreen({ navigation, route }: Props) {
       setSets((prev) => prev.map((row, i) => (i === index ? { ...row, done: false } : row)));
       return;
     }
+    if (!sets[index] || !isCompletable(sets[index])) return;
     const nextSets = sets.map((row, i) => (i === index ? { ...row, done: true } : row));
     setSets(nextSets);
     await persist(nextSets);
@@ -454,7 +462,9 @@ export default function RecordScreen({ navigation, route }: Props) {
                   styles.checkButton,
                   row.done && styles.checkButtonDone,
                   pending && styles.checkButtonPending,
+                  !row.done && !isCompletable(row) && styles.checkButtonDisabled,
                 ]}
+                disabled={!row.done && !isCompletable(row)}
                 onPress={() => completeSet(i)}
               >
                 {row.done && <Text style={styles.checkMark}>✓</Text>}
@@ -550,6 +560,7 @@ const styles = StyleSheet.create({
   },
   checkButtonDone: { backgroundColor: colors.accent, borderColor: colors.accent },
   checkButtonPending: { borderColor: colors.warning, borderWidth: 2 },
+  checkButtonDisabled: { opacity: 0.3 },
   checkMark: { color: "#fff", fontSize: 12 },
   addSetRow: { alignItems: "center", paddingVertical: 10 },
   addSetText: { color: colors.textMuted, fontSize: 13 },
