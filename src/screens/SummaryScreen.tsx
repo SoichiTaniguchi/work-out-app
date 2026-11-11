@@ -45,7 +45,7 @@ export default function SummaryScreen({ navigation, route }: Props) {
   const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
 
   useEffect(() => {
-    (async () => {
+    const load = async () => {
       const since = startOfTodayIso();
       const [todayLogs, todayRecords, todayStats, todayDailyLog] = await Promise.all([
         listWorkoutLogsSince(db, userId, since),
@@ -57,8 +57,12 @@ export default function SummaryScreen({ navigation, route }: Props) {
       setRecords(todayRecords);
       setStats(todayStats);
       setDailyLog(todayDailyLog);
-    })();
-  }, [db, userId]);
+    };
+    load();
+    // 記録画面から戻ってきたときに最新の内容を反映する
+    const unsubscribe = navigation.addListener("focus", load);
+    return unsubscribe;
+  }, [db, userId, navigation]);
 
   const today = new Date();
   // 排便しか入っていない日は「未記録」として扱う(この画面では排便を出さないため)
